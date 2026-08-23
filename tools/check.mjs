@@ -58,6 +58,19 @@ for(const dyn of ['uB0','uB1','uB2','uB3','uB4']){
 }
 ok(`uniform contract: ${refs.size} referenced, ${declared.size} declared`);
 
+/* ---- 2b. accessor contract: every uX.value written in main.js must exist
+   as a key in some makeMaterial uniforms object ---- */
+const declaredObjs = new Set();
+for(const m of main.matchAll(/(u[A-Z]\w+)\s*:\s*\{\s*value/g)) declaredObjs.add(m[1]);
+const writes = new Set();
+for(const m of main.matchAll(/\bu\.(u[A-Z]\w+)\.value/g)) writes.add(m[1]);
+for(const m of main.matchAll(/\bu[bc]\.(u[A-Z]\w+)\.value/g)) writes.add(m[1]);
+for(const m of main.matchAll(/uc\['uB'\s*\+\s*i\]/g)){ /* dynamic ok */ }
+for(const name of writes){
+  if(!declaredObjs.has(name)) fail(`main.js writes "${name}.value" but no uniforms object declares it`);
+}
+ok(`accessor contract: ${writes.size} written, ${declaredObjs.size} declared-in-JS`);
+
 /* ---- 3. built artifact ---- */
 const distPath = root + 'dist/index.html';
 if(!fs.existsSync(distPath)){ fail('dist/index.html missing'); }

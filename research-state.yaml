@@ -11,8 +11,15 @@ criteria_locked:
   scientific_scale: HUD reports physical units (rs in km, distances in AU, T in K);
     inner disk edge at ISCO 3rs; T(r) follows Shakura-Sunyaev incl. torque factor;
     orbital beta(r) = sqrt(M/(r-2M)) exact; science palette from Planck locus
-validation_target: 10 cold validation rounds minimum (rounds completed: 0)
+validation_target: 10 cold validation rounds minimum (rounds completed: 1)
 state: inner-loop
+h6_result: >
+  VALIDATED at instrument floor: rendered shadow radius 123.0px vs analytic
+  121.3px (+1.38%) at d=13.70rs, ultra tier, bloom-off/nograin channel,
+  24 clean upper-sector rays, spread 2px, interior max luminance 0/255.
+  Straight-ray pipeline leg: -0.79% (v6) / -2.24% (v7 first-light, disk-
+  contaminated channel). Residual 1.38% is instrument placement on a 2px
+  ramp; sub-0.5% needs 0.25px lerp steps + symmetric-sector averaging.
 hypotheses:
   H1: ISCO-exact inner edge (DISK_IN 2.6->3.0 rs) + plunging-region haze preserves drama, raises accuracy
   H2: Shakura-Sunyaev T(r) = T0 (r/rin)^-3/4 (1-sqrt(rin/r))^{1/4} replaces pure power law; Planck-locus color mapping

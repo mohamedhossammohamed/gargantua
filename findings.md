@@ -40,6 +40,21 @@ large-scale structure:
 - three r185 injects `#define SHADER_TYPE/NAME` before raw shader sources:
   strings carry NO `#version`; `glslVersion: THREE.GLSL3` supplies it.
   (Cost of learning: one full black-screen cycle.)
+- Setting `uX.value` without declaring `uX` in the material's uniforms object
+  throws per-frame and kills the rAF loop silently (black screen, fps frozen).
+  The accessor-contract check in tools/check.mjs now guards this.
+- **Metrology saga (H6)** — five gauge iterations taught: (1) bloom smears
+  the photon ring inward ~50px, fabricating interior glow — measure with
+  bloom off; (2) film grain ±0.03 *linear* becomes ±34 display levels after
+  gamma — absolute thresholds must exceed it or use ?nograin; (3) downsampled
+  readback halves radii — label units or suffer "-48%" ghosts; (4) overhead
+  view entangles disk brightness edge with the shadow — use the orbit view's
+  clean upper sector; (5) the round-1 adjudicated h2 "correction" over-bends
+  ~19% — in the affine Cartesian scheme h=|p×v| already IS b; refuted by
+  instrument, reverted with documentation.
+- **H6 RESULT: shadow radius +1.38% vs exact GR** (123.0 vs 121.3px,
+  interior 0/255 black). Integrator vindicated. Straight-ray leg validates
+  the projection pipeline to −0.79%.
 - Sandbox: ctx_shell hard 120s cap → detach long jobs via node child_process;
   native Bash gated entirely; shell redirects/downloads blocked.
 - Verification stack that works: python http.server (detached) on :8811 +

@@ -27,6 +27,7 @@ uniform int   uSteps;
 uniform float uDtScale;
 uniform float uLensing;
 uniform float uDoppler;
+uniform float uBeamExp;
 uniform float uGain;
 uniform float uOpacity;
 uniform float uFlow;
@@ -147,17 +148,21 @@ vec4 diskSample(vec3 q, vec3 rayDir){
 
   float fil = smoothstep(0.52, 0.88, n2);
 
-  /* relativistic shifts: orbital Doppler + gravitational redshift */
+  /* relativistic shifts: orbital Doppler + gravitational redshift,
+     full static-observer g-factor sqrt[(1-rs/r_em)/(1-rs/r_obs)] */
+  float gravObs = inversesqrt(max(1.0-RS/length(uCamPos), 1e-3));
   float temp = pow((DISK_IN*1.18)/rr, 0.75);
   float beta = clamp(sqrt(0.5/max(rr-RS, 0.55)), 0.0, 0.80);
   vec3 vd = vec3(-q.z, 0.0, q.x)/max(rr, 1e-4);
   float gam = inversesqrt(max(1.0-beta*beta, 0.01));
   float dopp = 1.0/(gam*(1.0-beta*dot(vd, -rayDir)));
-  float grav = sqrt(max(1.0-RS/rr, 0.04));
+  float grav = sqrt(max(1.0-RS/rr, 0.04))*gravObs;
   float shift = clamp(mix(1.0, dopp*grav, uDoppler), 0.32, 1.95);
 
   temp *= shift;
-  float boost = shift*shift*shift;
+  /* bolometric surface brightness: I_obs = g^4 * I_em (uBeamExp: 4 science,
+     3 cinematic tonal choice) */
+  float boost = pow(shift, uBeamExp);
 
   vec3 emis = blackbody(temp)*(dens*(1.0+fil*1.9));
   float rim = 1.0-smoothstep(1.0, 1.5, rr/DISK_IN);   /* white-hot inner edge */
@@ -174,6 +179,12 @@ vec3 trace(vec2 ndc){
   vec3 p = uCamPos;
   vec3 v = rd;
   vec3 hv = cross(p, v);
+  /* h2 = |p x v|^2 IS the conserved impact parameter b^2 of the affine-
+     parameterized Cartesian scheme (u''+u=3Mu^2 exact). Round-1 audit
+     proposed dividing by (1-rs/d); instrumented refutation (gauge v6,
+     straight-ray leg -0.79%) showed that OVER-bends by ~19% — the local-
+     observer relation b=d*sin(psi)/sqrt(1-rs/d) is already baked into the
+     scheme's gauge. Keep plain h2. */
   float h2 = dot(hv,hv)*uLensing;
 
   vec3 col = vec3(0.0);
@@ -211,8 +222,8 @@ vec3 trace(vec2 ndc){
   }
   if(!done && T > 0.01){
     /* step budget exhausted near the photon sphere — classify by radial
-       motion: outward rays are escaping, inward ones are effectively captured */
-    col += dot(p,v) > 0.0 ? T*skyColor(normalize(v)) : vec3(0.0);
+       motion with a dead-band so tangential rays can't flicker frame-to-frame */
+    col += dot(p,v) > 0.02 ? T*skyColor(normalize(v)) : vec3(0.0);
   }
   return col;
 }

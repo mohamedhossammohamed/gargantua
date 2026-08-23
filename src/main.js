@@ -87,7 +87,8 @@ function freeTarget(t){ if(t) t.dispose(); }
 const mScene = makeMaterial(FS_SCENE, {
   uTime:{value:0}, uCamPos:{value:new THREE.Vector3()}, uBasis:{value:new THREE.Matrix3()},
   uTanF:{value:1}, uAspect:{value:1}, uSteps:{value:290}, uDtScale:{value:0.75},
-  uLensing:{value:1}, uDoppler:{value:1}, uGain:{value:1.18}, uOpacity:{value:0.85},
+  uLensing:{value:1}, uDoppler:{value:1}, uBeamExp:{value:3},
+  uGain:{value:1.18}, uOpacity:{value:0.85},
   uFlow:{value:0.55}, uTwinkle:{value:0.6}, uTint:{value:new THREE.Vector3(1.06,0.97,0.88)},
 });
 const mBright = makeMaterial(FS_BRIGHT, {
@@ -137,6 +138,7 @@ const state = {
   doppler: true,
   bloom: true,
   palette: 'ember',
+  scienceMode: false,
   hudHidden: false,
 };
 
@@ -236,6 +238,26 @@ function queueResize(){
 new ResizeObserver(queueResize).observe(canvas);
 
 const DPR_CAP = 1.75;
+
+/* DPR changes with unchanged CSS size (display moves, OS scaling) never fire
+   ResizeObserver — re-arm a resolution query after every actual change */
+function watchDPR(){
+  const dpr = Math.min(devicePixelRatio || 1, DPR_CAP);
+  const mq = matchMedia(`(resolution: ${dpr}dppx)`);
+  mq.addEventListener('change', () => {
+    syncCanvasSize();
+    lastClientW = canvas.clientWidth; lastClientH = canvas.clientHeight;
+    allocTargets(false);
+    watchDPR();
+  }, { once: true });
+}
+watchDPR();
+
+/* kiosk mode (?kiosk=1): ambient displays outrun float32 noise precision
+   after ~4h — reload on schedule instead of degrading */
+const kioskHrs = parseFloat(new URLSearchParams(location.search).get('kiosk') || '0');
+if(kioskHrs > 0) setTimeout(() => location.reload(), kioskHrs*3600e3);
+const URL_NOGRAIN = new URLSearchParams(location.search).has('nograin');   /* metrology flag */
 
 /* ============================================================
    Input
@@ -450,6 +472,8 @@ function updateSceneUniforms(){
   const u = mScene.uniforms;
   u.uTime.value = simTime;
   u.uCamPos.value.copy(camera.position);
+  window.__gargantua = { camDist: Math.hypot(camera.position.x, camera.position.y, camera.position.z),
+                         steps: q.steps, tier: state.qKey };
   /* basis columns: right, up, forward */
   camera.getWorldDirection(_fwd);
   _right.crossVectors(_fwd, _worldUp).normalize();
@@ -465,6 +489,7 @@ function updateSceneUniforms(){
   u.uDtScale.value = q.dt;
   u.uLensing.value = state.lensing ? 1 : 0;
   u.uDoppler.value = state.doppler ? palCur.doppler : 0;
+  u.uBeamExp.value = state.scienceMode ? 4 : 3;
   u.uGain.value = palCur.gain;
   u.uOpacity.value = 0.85;
   u.uFlow.value = 0.55;
@@ -543,7 +568,7 @@ function render(now){
   uc.uExposure.value = 1.05;
   uc.uSaturation.value = palCur.sat;
   uc.uHasGlow.value = state.bloom ? 1 : 0;
-  uc.uGrainAmt.value = reducedMotion ? 0.0 : 0.030;
+  uc.uGrainAmt.value = (URL_NOGRAIN || reducedMotion) ? 0.0 : 0.030;
   uc.uOutTexel.value.copy(bufSize);
   drawPass(mComp, null);
 
