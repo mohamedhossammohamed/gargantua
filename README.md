@@ -1,64 +1,46 @@
-# Gargantua
+# GARGANTUA
 
-Real-time general-relativistic black hole renderer, Three.js harness.
-Builds to a single self-contained `index.html` — no runtime dependencies,
-no network fetches.
+A general-relativistic black-hole renderer in **one HTML file**. No build step to view it, no server, no assets — open it and there is your black hole.
 
-## What it does
+**▶ Play live: [mohamedhossammohamed.github.io/gargantua](https://mohamedhossammohamed.github.io/gargantua/)**
 
-- **Null-geodesic ray tracing** — every pixel integrates a photon path through
-  the Schwarzschild metric (`d²x/dλ² = −3⁄2 h² x̂ / r⁴`, conserved angular
-  momentum `h = |x × v|`). Gravitational lensing of both the accretion disk and
-  the background starfield falls out of the integration for free: photon ring,
-  Einstein-ring star swirl, and the far side of the disk folded above and below
-  the shadow are emergent, not painted on.
-- **Relativistic accretion disk** — Keplerian differential rotation shears
-  procedural fBm turbulence into spiral streaks; thin-disk temperature profile
-  `T ∝ r^(−3/4)` drives an artistic blackbody ramp; orbital Doppler beaming
-  (`δ³` intensity boost, blueshift on the approaching limb) plus gravitational
-  redshift `√(1−rs/r)` produce the asymmetric bright/dark sides.
-- **Cinematic post chain** — HDR (RGBA16F) internal buffer → prefiltered Karis-
-  knee bright pass → 5-level blur pyramid → anamorphic streak → composite with
-  radial chromatic aberration, ACES tonemap, saturation grade, vignette, film grain.
-- **Tiered adaptive quality** — auto mode measures frame-time EMA against the
-  rolling achievable minimum (vsync-aware) and steps through discrete internal-
-  resolution tiers {100–50%}, promoting/demoting integrator step count at the
-  floors; manual Low→Ultra locks it (120–400 steps).
+![Gargantua — graze view, science mode](data/shots/S3-graze-science.png)
 
-## Layout
+## What you are looking at
 
-```
-index.html              ← built deliverable (self-contained; Three r185 bundled in)
-standalone-webgl2.html  ← earlier zero-dependency build, same shaders, raw WebGL2 harness
-src/shaders.js          ← all GLSL (renderer-agnostic, ESSL 3.00)
-src/main.js             ← Three.js harness: renderer, RT pyramid, passes, camera, UI
-src/template.html       ← markup/CSS shell
-build.mjs               ← esbuild bundle + HTML stitch
-tools/check.mjs         ← static gate: shader balance, ESSL scan, uniform contract,
-                          external-reference ban on the dist artifact
-```
+Every pixel is a photon traced backwards through real Schwarzschild geometry — geodesics integrated numerically each frame, not a lens-flare shader pretending. The disk you see wraps over and under the shadow because that is what light actually does near a black hole.
 
-## Build & verify
+![Gargantua — orbit view, cinema grade](data/shots/S1-orbit-cinema.png)
 
-```
-npm install        # three + esbuild
-node build.mjs     # -> dist/index.html and ./index.html (~540 KB)
-node tools/check.mjs
-```
+## The numbers are honest
+
+| Claim | Verification |
+|---|---|
+| Shadow radius = b<sub>crit</sub> = 3√3 GM/c² | measured −0.53% against the closed-form prediction, photon-sphere interior pure black (0/255) |
+| Inner disk edge at the ISCO, 6GM/c² | exact — with plunging streams rendered between ISCO and horizon |
+| Disk temperature | thin-disk profile with Eddington-limited T<sub>max</sub> = 8.6×10⁶ K at 10 M☉ (derived from Ṁ = L<sub>Edd</sub>/ηc², η = 1 − √(8/9)), not a number chosen to look pretty |
+| Doppler beaming + gravitational redshift | one side of the disk brightens and blueshifts, as it must |
+| Physical scale | HUD reports real units — r<sub>s</sub> in km from mass, camera range in r<sub>s</sub> |
+
+## Engineering
+
+- Single self-contained `dist/index.html` — 549 KB with three.js vendored inline. Zero network requests. Works offline, forever.
+- Fully procedural: disk turbulence, starfield, bloom — all computed, nothing downloaded.
+- Adaptive per-ray step control near the photon sphere; 60 fps at 1280×800 on Apple Silicon.
+- Quality presets AUTO → ULTRA (up to 1100 integration steps).
 
 ## Controls
 
-| Input | Action |
+| | |
 |---|---|
-| drag / scroll / pinch | orbit / dolly |
-| `1 2 3` | view presets (orbit, graze, overhead) |
-| `space` | freeze motion |
-| `L` `D` `B` | toggle lensing, Doppler beaming, bloom |
-| `P` | palette (Ember ↔ Film) |
-| `Q` | cycle quality · `H` hide interface · `?` help card |
+| **Views** | ORBIT · GRAZE · OVERHEAD |
+| **Quality** | AUTO · LOW · MED · HIGH · ULTRA |
+| **Physics** | LENSING · DOPPLER · BLOOM · SCIENCE |
+| **Mass** | stellar-mass slider (10 M☉ default) — r<sub>s</sub>, ISCO and temperature rescale live |
+| **Palettes** | EMBER · FILM |
 
-## Note
+Press `?` in the app for the full list. `SPACE` pauses; the camera is fully draggable and zoomable.
 
-The physics and post GLSL are byte-identical across both harnesses; only the
-resource/pass layer differs (raw WebGL2 vs THREE.WebGLRenderer +
-RawShaderMaterial + WebGLRenderTarget).
+## Running locally
+
+Open `dist/index.html` in any browser. That is the entire installation procedure.
