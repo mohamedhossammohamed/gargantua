@@ -90,7 +90,7 @@ const mScene = makeMaterial(FS_SCENE, {
   uLensing:{value:1}, uDoppler:{value:1}, uBeamExp:{value:3},
   uScience:{value:0}, uDiskIn:{value:2.6}, uTNorm:{value:0.354},
   uGain:{value:1.18}, uOpacity:{value:0.85},
-  uFlow:{value:0.55}, uTwinkle:{value:0.6}, uTint:{value:new THREE.Vector3(1.06,0.97,0.88)},
+  uFlow:{value:0.70711}, uTwinkle:{value:0.6}, uTint:{value:new THREE.Vector3(1.06,0.97,0.88)},  /* exact Omega_K = sqrt(M/r^3), M=1/2 */
 });
 const mBright = makeMaterial(FS_BRIGHT, {
   uSrc:{value:null}, uTexel:{value:new THREE.Vector2()},
@@ -139,7 +139,10 @@ const RS_KM_PER_MSUN = 2.953;
 const AU_KM = 1.496e8;
 function massPhysics(msun){
   const rsKm = RS_KM_PER_MSUN*msun;
-  return { rsKm, tMaxK: 6.3e7*Math.pow(10/msun, 0.25) };
+  /* T_max = 0.4879 * [3 G M Mdot / (8 pi sigma r_in^3)]^{1/4}, Mdot = L_Edd/(eta c^2),
+     eta = 1-sqrt(8/9) (Schwarzschild), r_in = 6GM/c^2  ->  8.6e6 K at 10 Msun.
+     (Round-2 audit: the earlier 6.3e7 constant was ~7x super-Eddington.) */
+  return { rsKm, tMaxK: 8.6e6*Math.pow(10/msun, 0.25) };
 }
 
 const state = {

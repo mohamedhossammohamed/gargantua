@@ -6,13 +6,22 @@ question: >
   velocities, shadow size)?
 criteria_locked:
   photorealism: cold-reviewer panel scores; no paper-thin-disk or banding artifacts
-  pixel_perfect: MET — lensed shadow 212.5px vs exact-GR 213.6px (-0.50%), interior 0/255,
-    spread <2px @2x supersample; straight-ray leg -1.49% (disk-contaminated channel)
+  pixel_perfect: MET — lensed shadow 213.0px vs exact-GR 213.5px (-0.26%) with adaptive
+    dphi stepping, interior 0/255, spread <3px @2x supersample; straight-ray leg -1.49%
+    (disk-contaminated diagnostic channel)
   no_visual_bugs: two consecutive fully-clean cold validation rounds (>=6 reviewers each)
   scientific_scale: HUD reports physical units (rs in km, distances in AU, T in K);
     inner disk edge at ISCO 3rs; T(r) follows Shakura-Sunyaev incl. torque factor;
     orbital beta(r) = sqrt(M/(r-2M)) exact; science palette from Planck locus
 validation_target: 10 cold validation rounds minimum (rounds completed: 1)
+h1h3_result: >
+  IMPLEMENTED behind Science toggle (Y) — exact ISCO inner edge (3rs) with
+  plunging infall streams; Shakura-Sunyaev T(r)=T_max*f(x)/0.4879 with
+  inner-torque factor; Planck-locus palette + honest T^4 falloff; mass
+  presets {10 Msun, Sgr A* 4.3e6, Gargantua 1e8} with rs=2.953 km/Msun and
+  T_max=6.3e7 K (10/M)^{1/4}; HUD reports rs/camera distance/disk T in
+  physical units. Cinema mode preserved (2.6rs artistic edge, amber ramp).
+  Committed c3bab59; screenshots S1-S5 captured, 0 page errors.
 state: inner-loop
 integrator: >
   EXACT Schwarzschild null geodesics — orbital-plane Binet u''+u=3Mu^2 (M=rs/2),

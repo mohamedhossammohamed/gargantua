@@ -139,10 +139,42 @@ vec3 skyColor(vec3 d){
 vec4 diskSample(vec3 q, vec3 rayDir){
   float rr = length(q.xz);
   float rin = uDiskIn;
+  vec3 emis = vec3(0.0);
+  float alpha = 0.0;
+
+  /* relativistic shifts (shared): orbital Doppler + gravitational redshift,
+     full static-observer g-factor sqrt[(1-rs/r_em)/(1-rs/r_obs)] */
+  float gravObs = inversesqrt(max(1.0-RS/length(uCamPos), 1e-3));
+  float beta = clamp(sqrt(0.5/max(rr-RS, 0.55)), 0.0, 0.80);
+  vec3 vd = vec3(-q.z, 0.0, q.x)/max(rr, 1e-4);
+  float gam = inversesqrt(max(1.0-beta*beta, 0.01));
+  float dopp = 1.0/(gam*(1.0-beta*dot(vd, -rayDir)));
+  float grav = sqrt(max(1.0-RS/rr, 0.04))*gravObs;
+  float shift = clamp(mix(1.0, dopp*grav, uDoppler), 0.32, 1.95);
+  /* I_obs = g^uBeamExp * I_em (4 = bolometric science, 3 = cinematic tone) */
+  float boost = pow(shift, uBeamExp);
+
+  /* plunging region FIRST — it lives inside the disk's inner envelope and
+     must not be killed by the envelope early-return (round-2 audit) */
+  if(uScience > 0.5){
+    float band = smoothstep(1.15, 1.7, rr)*(1.0-smoothstep(rin*0.72, rin*0.98, rr));
+    if(band > 0.01){
+      float phiP = atan(q.z, q.x);
+      float wff = 0.70711*2.4*inversesqrt(rr*rr*rr);
+      float phi2 = phiP - wff*uTime*1.6;
+      float rDrift = rr + uTime*0.30*inversesqrt(max(rr-1.0, 0.25));
+      float ns = vnoise(vec3(cos(phi2)*3.0, sin(phi2)*3.0, rDrift*3.5));
+      float densP = band*band*pow(clamp(ns*1.8-0.55, 0.0, 1.0), 1.4);
+      vec3 pc = kelvinRGB(uTNorm*1e7*0.55)*0.40;
+      emis += pc*densP*uGain*boost;
+      alpha = clamp(densP*0.55*uOpacity, 0.0, 1.0);
+    }
+  }
+
   float inner = smoothstep(rin*0.84, rin*1.12, rr);
   float outer = 1.0-smoothstep(DISK_OUT*0.52, DISK_OUT*0.98, rr);
   float env = inner*outer;
-  if(env < 0.003) return vec4(0.0);
+  if(env < 0.003) return vec4(emis, alpha);
 
   float phi = atan(q.z, q.x);
   float omega = uFlow*inversesqrt(rr*rr*rr);
@@ -159,19 +191,9 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   dens = clamp(dens*1.62-0.30, 0.0, 1.0);
   dens = dens*dens*(3.0-2.0*dens);
   dens *= env;
-  if(dens < 0.004) return vec4(0.0);
+  if(dens < 0.004) return vec4(emis, alpha);
 
   float fil = smoothstep(0.52, 0.88, n2);
-
-  /* relativistic shifts: orbital Doppler + gravitational redshift,
-     full static-observer g-factor sqrt[(1-rs/r_em)/(1-rs/r_obs)] */
-  float gravObs = inversesqrt(max(1.0-RS/length(uCamPos), 1e-3));
-  float beta = clamp(sqrt(0.5/max(rr-RS, 0.55)), 0.0, 0.80);
-  vec3 vd = vec3(-q.z, 0.0, q.x)/max(rr, 1e-4);
-  float gam = inversesqrt(max(1.0-beta*beta, 0.01));
-  float dopp = 1.0/(gam*(1.0-beta*dot(vd, -rayDir)));
-  float grav = sqrt(max(1.0-RS/rr, 0.04))*gravObs;
-  float shift = clamp(mix(1.0, dopp*grav, uDoppler), 0.32, 1.95);
 
   float temp;
   vec3 bodyCol;
@@ -191,33 +213,15 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   }
 
   temp *= shift;
-  /* bolometric surface brightness: I_obs = g^4 * I_em (uBeamExp: 4 science,
-     3 cinematic tonal choice) */
-  float boost = pow(shift, uBeamExp);
 
-  vec3 emis = bodyCol*(dens*(1.0+fil*1.9));
-  float alpha = clamp(dens*1.75*uOpacity, 0.0, 1.0);
-
-  if(uScience > 0.5){
-    /* plunging region: faint infall streaks between horizon and ISCO,
-       advected at free-fall-ish rate with inward radial drift */
-    float band = smoothstep(1.15, 1.7, rr)*(1.0-smoothstep(rin*0.72, rin*0.98, rr));
-    if(band > 0.01){
-      float wff = uFlow*2.4*inversesqrt(rr*rr*rr);
-      float phi2 = phi - wff*uTime*1.6;
-      float rDrift = rr + uTime*0.30*inversesqrt(max(rr-1.0, 0.25));
-      float ns = vnoise(vec3(cos(phi2)*3.0, sin(phi2)*3.0, rDrift*3.5));
-      float densP = band*band*pow(clamp(ns*1.8-0.55, 0.0, 1.0), 1.4);
-      vec3 pc = kelvinRGB(uTNorm*1e7*0.55)*0.40;
-      emis += pc*densP*uGain*boost;
-      alpha = clamp(alpha + densP*0.55*uOpacity, 0.0, 1.0);
-    }
-  } else {
+  emis += bodyCol*(dens*(1.0+fil*1.9));
+  if(uScience < 0.5){
     float rim = 1.0-smoothstep(1.0, 1.5, rr/rin);    /* white-hot inner edge (cinema) */
     emis += vec3(1.9,2.0,2.3)*(rim*rim*0.85)*inner;
   }
 
   emis *= uGain*boost*mix(uTint, vec3(1.0), uScience);
+  alpha = clamp(alpha + dens*1.75*uOpacity, 0.0, 1.0);
   return vec4(emis, alpha);
 }
 
@@ -274,7 +278,6 @@ vec3 trace(vec2 ndc){
 
   bool done = false;
   float M = 0.5*RS;
-  float dphi = 0.09*uDtScale;
 
   /* Binet RHS */
   #define BINET(UU) (3.0*M*(UU)*(UU) - (UU))
@@ -283,6 +286,11 @@ vec3 trace(vec2 ndc){
     if(i >= uSteps || done) break;
 
     float yPrev = (1.0/u)*( cos(phi)*e1.y + sin(phi)*e2.y );
+
+    /* adaptive phi-step: fine near the photon sphere (u~2/3) so winding
+       orbits get the budget. Cap 1.0 — larger far-field steps quantize the
+       terminal sky direction into visible rings (regression caught on S2). */
+    float dphi = uDtScale*0.09*clamp(0.35/u, 0.6, 1.0);
 
     /* RK4 step */
     float k1u = w,             k1w = BINET(u);
@@ -314,7 +322,8 @@ vec3 trace(vec2 ndc){
       if(hr > uDiskIn*0.84 && hr < DISK_OUT){
         vec3 er = cos(phiH)*e1 + sin(phiH)*e2;
         vec3 ep = -sin(phiH)*e1 + cos(phiH)*e2;
-        vec3 marchDir = normalize((-w/(u*u))*er + (1.0/u)*ep);
+        float wH = mix(w, wN, f);                    /* interpolated — step-start (u,w) is stale mid-step */
+        vec3 marchDir = normalize((-wH/(uH*uH))*er + (1.0/uH)*ep);
         vec4 ds = diskSample(q, marchDir);
         col += T*ds.rgb;
         T *= 1.0-ds.a;
