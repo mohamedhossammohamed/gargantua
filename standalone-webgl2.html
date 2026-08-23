@@ -1,0 +1,1258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gargantua</title>
+<meta name="description" content="Real-time general-relativistic black hole renderer — lensed accretion disk, Doppler beaming, volumetric bloom.">
+<style>
+/* ============================================================
+   GARGANTUA — mission-control treatment
+   Single committed visual world: instrument-panel dark,
+   amber accent echoing disk temperature. Explicitly painted;
+   no theme switching (a light mode around a black hole is absurd).
+   ============================================================ */
+:root {
+  --void:      #04050a;
+  --panel:     rgba(10, 13, 22, 0.55);
+  --hairline:  rgba(226, 233, 248, 0.14);
+  --ink:       #e8ecf6;
+  --dim:       rgba(210, 219, 238, 0.55);
+  --faint:     rgba(210, 219, 238, 0.32);
+  --amber:     #ffb454;
+  --amber-dim: rgba(255, 180, 84, 0.16);
+  --danger:    #ff6b57;
+  --sans: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--sans);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+#view {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+}
+#view.dragging { cursor: grabbing; }
+
+/* ---------- HUD chrome ---------- */
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+#hud.hidden, #intro.gone { opacity: 0; }
+#hud.hidden { visibility: hidden; }   /* invisible chrome must not stay clickable */
+#hud { transition: opacity 0.45s ease, visibility 0.45s; }
+
+.label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* brand — top left */
+#brand { position: absolute; top: max(22px, env(safe-area-inset-top)); left: max(26px, env(safe-area-inset-left)); user-select: none; }
+#brand h1 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.52em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-indent: 0.52em; /* balance tracking */
+}
+#brand p { margin-top: 6px; }
+
+/* telemetry — bottom left */
+#telemetry {
+  position: absolute; left: max(26px, env(safe-area-inset-left)); bottom: max(24px, env(safe-area-inset-bottom));
+  font-family: var(--mono); font-size: 10.5px; line-height: 1.9;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+#telemetry b { color: var(--ink); font-weight: 500; }
+#telemetry .k { display: inline-block; min-width: 9.5ch; color: var(--faint); letter-spacing: 0.14em; text-transform: uppercase; font-size: 9px; }
+#telemetry .live { color: var(--amber); }
+
+/* controls — bottom right */
+#controls {
+  position: absolute; right: max(26px, env(safe-area-inset-right)); bottom: max(24px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 9px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.cgroup { display: flex; align-items: center; gap: 7px; pointer-events: auto; }
+.cgroup .label { margin-right: 3px; }
+.chip {
+  appearance: none; border: 1px solid var(--hairline);
+  background: var(--panel);
+  color: var(--dim);
+  font-family: var(--mono); font-size: 9.5px;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  padding: 5px 11px; border-radius: 2px;
+  cursor: pointer;
+  transition: color .18s ease, border-color .18s ease, background .18s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.chip:hover { color: var(--ink); border-color: rgba(226,233,248,0.34); }
+.chip:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
+.chip.on { color: var(--amber); border-color: rgba(255,180,84,0.55); background: var(--amber-dim); }
+
+/* status — top right */
+#status { position: absolute; top: max(24px, env(safe-area-inset-top)); right: max(26px, env(safe-area-inset-right)); display: flex; gap: 7px; pointer-events: auto; align-items: flex-start; }
+
+/* help card */
+#helpcard {
+  position: absolute; top: 68px; right: 26px;
+  width: 252px;
+  border: 1px solid var(--hairline);
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 16px 18px 14px;
+  border-radius: 3px;
+  display: none;
+}
+#helpcard.open { display: block; }
+#helpcard table { width: 100%; border-collapse: collapse; margin-top: 9px; }
+#helpcard td { font-size: 11px; color: var(--dim); padding: 3.5px 0; vertical-align: middle; }
+#helpcard td:first-child { width: 76px; }
+kbd {
+  font-family: var(--mono); font-size: 9px;
+  border: 1px solid var(--hairline); border-bottom-width: 2px;
+  border-radius: 2px; padding: 1.5px 5px; color: var(--ink);
+  background: rgba(255,255,255,0.04);
+}
+
+/* ---------- intro title card ---------- */
+#intro {
+  position: fixed; inset: 0; z-index: 20;
+  display: grid; place-content: center; text-align: center;
+  pointer-events: none;
+  transition: opacity 1.6s ease;
+}
+#intro h2 {
+  font-weight: 200;
+  font-size: clamp(30px, 6vw, 62px);
+  letter-spacing: 0.42em; text-indent: 0.42em;
+  text-transform: uppercase;
+  color: var(--ink);
+  opacity: 0;
+  animation: introIn 2.4s ease 0.7s forwards;
+}
+#intro p {
+  margin-top: 18px;
+  opacity: 0;
+  animation: introIn 2.2s ease 1.6s forwards;
+}
+#intro .hint { margin-top: 44px; opacity: 0; animation: introIn 2s ease 3.4s forwards; }
+@keyframes introIn { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  #intro h2, #intro p, #intro .hint { animation-duration: 0.01s; animation-delay: 0s; }
+  #hud, #intro { transition: none; }
+}
+
+/* compact layout: narrow viewports shed chrome, keep the black hole */
+@media (max-width: 720px) {
+  #brand p { display: none; }
+  #telemetry { bottom: auto; top: 64px; left: 20px; font-size: 9.5px; }
+  #telemetry div:nth-child(n+3) { display: none; }
+  #controls { right: 16px; bottom: 16px; gap: 7px; }
+  .cgroup .label { display: none; }
+  .chip { padding: 5px 8px; font-size: 8.5px; letter-spacing: 0.1em; }
+  #status { top: 18px; right: 16px; }
+  #helpcard { top: 60px; right: 16px; width: 224px; }
+}
+
+/* ---------- veil (boot / failure) ---------- */
+#veil {
+  position: fixed; inset: 0; z-index: 30;
+  background: var(--void);
+  display: grid; place-content: center; text-align: center;
+  transition: opacity 1.1s ease;
+  pointer-events: none;
+}
+#veil.off { opacity: 0; }
+#veil .msg { display: none; }
+#veil.fail .msg-fail { display: block; pointer-events: auto; }
+#veil .msg-fail p { color: var(--dim); font-size: 13px; margin-top: 10px; }
+#veil .msg-fail .headline { color: var(--danger); font-family: var(--mono); font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; }
+</style>
+</head>
+<body>
+
+<canvas id="view" aria-label="Interactive general-relativistic black hole render"></canvas>
+
+<div id="hud">
+  <div id="brand">
+    <h1>Gargantua</h1>
+    <p class="label">General&#8209;relativistic ray tracer &middot; Schwarzschild geodesics</p>
+  </div>
+
+  <div id="telemetry">
+    <div><span class="k">frame</span><b id="tFps">-- fps</b></div>
+    <div><span class="k">internal</span><b id="tRes">--%</b></div>
+    <div><span class="k">integrator</span><b id="tSteps">-- steps</b></div>
+    <div><span class="k">preset</span><b id="tPreset" class="live">EMBER</b></div>
+  </div>
+
+  <div id="controls">
+    <div class="cgroup"><span class="label">View</span>
+      <button class="chip view on" data-view="orbit">Orbit</button>
+      <button class="chip view" data-view="graze">Graze</button>
+      <button class="chip view" data-view="overhead">Overhead</button>
+    </div>
+    <div class="cgroup"><span class="label">Quality</span>
+      <button class="chip qual on" data-q="auto">Auto</button>
+      <button class="chip qual" data-q="low">Low</button>
+      <button class="chip qual" data-q="medium">Med</button>
+      <button class="chip qual" data-q="high">High</button>
+      <button class="chip qual" data-q="ultra">Ultra</button>
+    </div>
+    <div class="cgroup"><span class="label">Physics</span>
+      <button class="chip tog on" id="btnLens">Lensing</button>
+      <button class="chip tog on" id="btnDopp">Doppler</button>
+      <button class="chip tog on" id="btnBloom">Bloom</button>
+    </div>
+    <div class="cgroup"><span class="label">Palette</span>
+      <button class="chip pal on" data-pal="ember">Ember</button>
+      <button class="chip pal" data-pal="film">Film</button>
+    </div>
+  </div>
+
+  <div id="status">
+    <button class="chip" id="btnPause">Pause</button>
+    <button class="chip" id="btnHelp" aria-expanded="false">?</button>
+  </div>
+
+  <div id="helpcard" role="dialog" aria-label="Keyboard shortcuts">
+    <span class="label">Command reference</span>
+    <table>
+      <tr><td><kbd>drag</kbd></td><td>orbit camera</td></tr>
+      <tr><td><kbd>scroll</kbd></td><td>dolly in / out</td></tr>
+      <tr><td><kbd>1 2 3</kbd></td><td>view presets</td></tr>
+      <tr><td><kbd>space</kbd></td><td>freeze motion</td></tr>
+      <tr><td><kbd>L</kbd></td><td>lensing on / off</td></tr>
+      <tr><td><kbd>D</kbd></td><td>Doppler beaming</td></tr>
+      <tr><td><kbd>B</kbd></td><td>bloom</td></tr>
+      <tr><td><kbd>P</kbd></td><td>palette preset</td></tr>
+      <tr><td><kbd>Q</kbd></td><td>cycle quality</td></tr>
+      <tr><td><kbd>H</kbd></td><td>hide interface</td></tr>
+    </table>
+  </div>
+</div>
+
+<div id="intro">
+  <h2>Gargantua</h2>
+  <p class="label">Light, bent to its breaking point</p>
+  <p class="hint label">Drag to orbit &middot; Scroll to approach</p>
+</div>
+
+<div id="veil">
+  <div class="msg msg-boot"><span class="label">Integrating null geodesics&hellip;</span></div>
+  <div class="msg msg-fail">
+    <div class="headline">Renderer unavailable</div>
+    <p>This scene requires WebGL2. Try a recent Chrome, Edge, Firefox or Safari&nbsp;15+, and make sure hardware acceleration is enabled.</p>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ============================================================
+   GARGANTUA — real-time Schwarzschild ray tracer
+   Pipeline: geodesic-march scene (HDR, internal-res) ->
+   bright-pass -> 5-level separable blur pyramid -> anamorphic
+   streak -> composite (CA, ACES, grade, vignette, grain).
+   Zero dependencies; core WebGL2 only.
+   ============================================================ */
+
+const canvas = document.getElementById('view');
+const veil = document.getElementById('veil');
+const hudEl = document.getElementById('hud');
+const introEl = document.getElementById('intro');
+
+const gl = canvas.getContext('webgl2', {
+  antialias: false, alpha: false, depth: false, stencil: false,
+  powerPreference: 'high-performance', preserveDrawingBuffer: false
+});
+if (!gl) { veil.classList.add('fail'); veil.querySelector('.msg-boot').style.display='none'; throw new Error('webgl2 unavailable'); }
+
+/* ---------- capability probing ---------- */
+const extCF  = gl.getExtension('EXT_color_buffer_float');
+const extCFH = gl.getExtension('EXT_color_buffer_half_float');
+gl.getExtension('OES_texture_float_linear');
+let HDR_FMT = gl.RGBA16F, HDR_TYPE = gl.HALF_FLOAT;
+if (!extCF && !extCFH) { HDR_FMT = gl.RGBA8; HDR_TYPE = gl.UNSIGNED_BYTE; }
+/* LDR fallback: scene clamps at 1.0, so the bloom knee must sit lower */
+let BLOOM_THRESHOLD = (HDR_FMT === gl.RGBA16F) ? 1.0 : 0.55;
+
+/* ============================================================
+   Shaders
+   ============================================================ */
+const VS = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos;
+out vec2 vUv;
+void main(){ vUv = aPos.xy*0.5+0.5; gl_Position = vec4(aPos.xy,0.0,1.0); }`;
+
+/* ---------------- scene: geodesic integrator ---------------- */
+const FS_SCENE = `#version 300 es
+precision highp float;
+precision highp int;
+in vec2 vUv;
+out vec4 outColor;
+
+uniform float uTime;
+uniform vec3  uCamPos;
+uniform mat3  uBasis;
+uniform float uTanF;
+uniform float uAspect;
+uniform int   uSteps;
+uniform float uDtScale;
+uniform float uLensing;
+uniform float uDoppler;
+uniform float uGain;
+uniform float uOpacity;
+uniform float uFlow;
+uniform float uTwinkle;
+uniform vec3  uTint;
+
+const float RS        = 1.0;    /* Schwarzschild radius */
+const float DISK_IN   = 2.6;    /* just outside ISCO (3 rs) for drama */
+const float DISK_OUT  = 11.0;
+const float ESC_R2    = 1936.0; /* r = 44 */
+const int   MAX_STEPS = 420;
+
+/* ---- hashing & noise ---- */
+float hash13(vec3 p){
+  p = fract(p*0.1031);
+  p += dot(p, p.zyx+31.32);
+  return fract((p.x+p.y)*p.z);
+}
+float vnoise(vec3 p){
+  vec3 i = floor(p), f = fract(p);
+  vec3 u = f*f*(3.0-2.0*f);
+  float a = hash13(i);
+  float b = hash13(i+vec3(1.0,0.0,0.0));
+  float c = hash13(i+vec3(0.0,1.0,0.0));
+  float d = hash13(i+vec3(1.0,1.0,0.0));
+  float e = hash13(i+vec3(0.0,0.0,1.0));
+  float g = hash13(i+vec3(1.0,0.0,1.0));
+  float h = hash13(i+vec3(0.0,1.0,1.0));
+  float k = hash13(i+vec3(1.0,1.0,1.0));
+  return mix(mix(mix(a,b,u.x),mix(c,d,u.x),u.y),
+             mix(mix(e,g,u.x),mix(h,k,u.x),u.y),u.z);
+}
+const mat3 ROT = mat3(vec3(0.36,0.48,-0.80), vec3(-0.80,0.60,0.0), vec3(0.48,0.64,0.60));
+float fbm5(vec3 p){
+  float s=0.0, a=0.5;
+  for(int i=0;i<5;i++){ s+=a*vnoise(p); p=ROT*p*2.03+11.5; a*=0.55; }
+  return s;
+}
+float fbm4(vec3 p){
+  float s=0.0, a=0.5;
+  for(int i=0;i<4;i++){ s+=a*vnoise(p); p=ROT*p*2.11+7.3; a*=0.55; }
+  return s;
+}
+
+/* ---- thermal emission ramp (artistic blackbody) ---- */
+vec3 blackbody(float t){
+  t = clamp(t, 0.22, 2.45);
+  vec3 c = mix(vec3(0.20,0.020,0.000), vec3(0.95,0.150,0.012), smoothstep(0.22,0.70,t));
+  c = mix(c, vec3(1.02,0.46,0.09), smoothstep(0.70,1.05,t));
+  c = mix(c, vec3(1.32,0.89,0.51), smoothstep(1.05,1.45,t));
+  c = mix(c, vec3(1.85,1.63,1.29), smoothstep(1.45,1.88,t));
+  c = mix(c, vec3(1.92,2.08,2.45), smoothstep(1.88,2.45,t));
+  return c;
+}
+
+/* ---- celestial sphere ---- */
+const mat3 SKYA = mat3(vec3(0.66,0.0,-0.75), vec3(0.0,1.0,0.0), vec3(0.75,0.0,0.66));
+const mat3 SKYB = mat3(vec3(1.0,0.0,0.0), vec3(0.0,0.913,0.408), vec3(0.0,-0.408,0.913));
+const vec3  BN   = vec3(0.25,0.88,-0.40);
+const vec3  CORE = vec3(-0.70,0.15,0.65);
+
+float starLayer(vec3 d, float s, float thr, float amp){
+  vec3 p = d*s;
+  vec3 id = floor(p);
+  float h = hash13(id);
+  if(h < thr) return 0.0;
+  vec3 f = fract(p)-0.5;
+  vec3 off = (vec3(hash13(id+11.1), hash13(id+27.7), hash13(id+43.3))-0.5)*0.62;
+  float dd = length(f-off);
+  float mag = pow(hash13(id+5.5), 3.2);
+  float tw = mix(1.0, 0.72+0.38*sin(uTime*(0.6+h*2.4)+h*39.0), uTwinkle);
+  return exp(-dd*dd*110.0)*mag*amp*tw*16.0;
+}
+vec3 skyColor(vec3 d){
+  d = SKYA*SKYB*d;
+  vec3 col = vec3(0.0032,0.0042,0.0088);
+  float bd = dot(d, BN);
+  float band = exp(-bd*bd*24.0);
+  float clouds = fbm5(d*2.6+vec3(7.7));
+  float dust = fbm4(d*5.9+vec3(-3.1,5.2,1.9));
+  float mw = band*(0.30+1.05*pow(clamp(clouds*1.25-0.15,0.0,1.0),1.7));
+  mw *= 1.0-0.72*smoothstep(0.42,0.78,dust)*band;
+  vec3 mwc = mix(vec3(0.34,0.46,0.92), vec3(1.05,0.74,0.44),
+                 clamp(pow(clamp(band*clouds*1.6,0.0,1.0),1.1),0.0,1.0));
+  col += mwc*mw*0.50;
+  float cg = pow(max(dot(d,CORE),0.0),30.0);
+  col += vec3(1.0,0.80,0.55)*cg*band*0.85;
+  col += starLayer(d, 70.0, 0.9915, 1.15);
+  col += starLayer(d,150.0, 0.9880, 0.75);
+  col += starLayer(d,340.0, 0.9855, 0.42);
+  return col;
+}
+
+/* ---- accretion disk sample ---- */
+vec4 diskSample(vec3 q, vec3 rayDir){
+  float rr = length(q.xz);
+  float inner = smoothstep(DISK_IN*0.84, DISK_IN*1.12, rr);
+  float outer = 1.0-smoothstep(DISK_OUT*0.52, DISK_OUT*0.98, rr);
+  float env = inner*outer;
+  if(env < 0.003) return vec4(0.0);
+
+  float phi = atan(q.z, q.x);
+  float omega = uFlow*inversesqrt(rr*rr*rr);
+  float ang = phi - omega*uTime;
+  float ca_ = cos(ang), sa_ = sin(ang);
+  float lr = log(rr);
+  float t1 = uTime*0.05;
+
+  float n1 = fbm5(vec3(ca_*1.35, sa_*1.35, lr*4.6)+vec3(0.0,0.0,t1));
+  float n2 = fbm4(vec3(ca_*2.9+9.4, sa_*2.9, lr*8.8)+vec3(0.0,0.0,-t1*1.9));
+  float n3 = vnoise(vec3(ca_*7.5, sa_*7.5, lr*17.0)+vec3(t1*3.1));
+
+  float dens = n1*0.58+n2*0.30+n3*0.16;
+  dens = clamp(dens*1.62-0.30, 0.0, 1.0);
+  dens = dens*dens*(3.0-2.0*dens);
+  dens *= env;
+  if(dens < 0.004) return vec4(0.0);
+
+  float fil = smoothstep(0.52, 0.88, n2);
+
+  /* relativistic shifts: orbital Doppler + gravitational redshift */
+  float temp = pow((DISK_IN*1.18)/rr, 0.75);
+  float beta = clamp(sqrt(0.5/max(rr-RS, 0.55)), 0.0, 0.80);
+  vec3 vd = vec3(-q.z, 0.0, q.x)/max(rr, 1e-4);
+  float gam = inversesqrt(max(1.0-beta*beta, 0.01));
+  float dopp = 1.0/(gam*(1.0-beta*dot(vd, -rayDir)));
+  float grav = sqrt(max(1.0-RS/rr, 0.04));
+  float shift = clamp(mix(1.0, dopp*grav, uDoppler), 0.32, 1.95);
+
+  temp *= shift;
+  float boost = shift*shift*shift;
+
+  vec3 emis = blackbody(temp)*(dens*(1.0+fil*1.9));
+  float rim = 1.0-smoothstep(1.0, 1.5, rr/DISK_IN);   /* white-hot inner edge */
+  emis += vec3(1.9,2.0,2.3)*(rim*rim*0.85)*inner;
+  emis *= uGain*boost*uTint;
+
+  float alpha = clamp(dens*1.75*uOpacity, 0.0, 1.0);
+  return vec4(emis, alpha);
+}
+
+/* ---- null-geodesic march ---- */
+vec3 trace(vec2 ndc){
+  vec3 rd = normalize(uBasis*vec3(ndc.x*uAspect*uTanF, ndc.y*uTanF, 1.0));
+  vec3 p = uCamPos;
+  vec3 v = rd;
+  vec3 hv = cross(p, v);
+  float h2 = dot(hv,hv)*uLensing;
+
+  vec3 col = vec3(0.0);
+  float T = 1.0;
+  bool done = false;
+
+  for(int i=0;i<MAX_STEPS;i++){
+    if(i >= uSteps || done) break;
+    float r2 = dot(p,p);
+    if(r2 < RS*RS){ done = true; continue; }               /* captured */
+    if(r2 > ESC_R2 && dot(p,v) > 0.0){                     /* escaped  */
+      col += T*skyColor(normalize(v));
+      done = true; continue;
+    }
+    float r = sqrt(r2);
+    float dt = clamp(r*0.14*uDtScale, 0.02, 1.4);
+    if(abs(p.y) < 1.1 && r > DISK_IN*0.8 && r < DISK_OUT*1.05) dt *= 0.55;
+
+    vec3 acc = (-1.5*h2/(r2*r2*r))*p;
+    v += acc*dt;
+    vec3 np = p+v*dt;
+
+    if(p.y*np.y < 0.0){
+      float f = p.y/(p.y-np.y);
+      vec3 hp = mix(p, np, f);
+      float hr = length(hp.xz);
+      if(hr > DISK_IN*0.84 && hr < DISK_OUT){
+        vec4 ds = diskSample(hp, normalize(v));
+        col += T*ds.rgb;
+        T *= 1.0-ds.a;
+        if(T < 0.004){ done = true; continue; }
+      }
+    }
+    p = np;
+  }
+  if(!done && T > 0.01){
+    /* step budget exhausted near the photon sphere — classify by radial
+       motion: outward rays are escaping, inward ones are effectively captured */
+    col += dot(p,v) > 0.0 ? T*skyColor(normalize(v)) : vec3(0.0);
+  }
+  return col;
+}
+
+void main(){
+  vec2 ndc = vUv*2.0-1.0;
+  vec3 col = trace(ndc);
+  outColor = vec4(col, 1.0);
+}`;
+
+/* ---------------- post: bright pass ---------------- */
+const FS_BRIGHT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+uniform float uThreshold;
+uniform float uKnee;
+void main(){
+  /* 4-tap prefilter: retires isolated HDR fireflies before they alias
+     into the pyramid and the anamorphic streak */
+  vec3 c = texture(uSrc, vUv+uTexel*vec2(-0.5,-0.5)).rgb;
+  c += texture(uSrc, vUv+uTexel*vec2(0.5,-0.5)).rgb;
+  c += texture(uSrc, vUv+uTexel*vec2(-0.5,0.5)).rgb;
+  c += texture(uSrc, vUv+uTexel*vec2(0.5,0.5)).rgb;
+  c *= 0.25;
+  float br = max(max(c.r,c.g),c.b);
+  float soft = clamp((br-uThreshold+uKnee)/(2.0*uKnee+1e-4), 0.0, 1.0);
+  float w = max(br-uThreshold, 0.0)/max(br, 1e-4)*soft;
+  outColor = vec4(c*w, 1.0);
+}`;
+
+/* ---------------- post: downsample (box4) ---------------- */
+const FS_DOWN = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+void main(){
+  vec3 c = texture(uSrc, vUv+uTexel*vec2(-1.0,-1.0)).rgb;
+  c += texture(uSrc, vUv+uTexel*vec2(1.0,-1.0)).rgb;
+  c += texture(uSrc, vUv+uTexel*vec2(-1.0,1.0)).rgb;
+  c += texture(uSrc, vUv+uTexel*vec2(1.0,1.0)).rgb;
+  outColor = vec4(c*0.25, 1.0);
+}`;
+
+/* ---------------- post: separable gaussian ---------------- */
+const FS_BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+uniform vec2 uDir;
+void main(){
+  vec3 c = texture(uSrc, vUv).rgb*0.2270270;
+  vec2 o1 = uDir*uTexel*1.3846153;
+  vec2 o2 = uDir*uTexel*3.2307692;
+  c += texture(uSrc, vUv+o1).rgb*0.3162162;
+  c += texture(uSrc, vUv-o1).rgb*0.3162162;
+  c += texture(uSrc, vUv+o2).rgb*0.0702702;
+  c += texture(uSrc, vUv-o2).rgb*0.0702702;
+  outColor = vec4(c, 1.0);
+}`;
+
+/* ---------------- post: anamorphic streak ---------------- */
+const FS_STREAK = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+void main(){
+  vec3 acc = texture(uSrc, vUv).rgb;
+  float wsum = 1.0;
+  float w = 0.84;
+  for(int i=1;i<=14;i++){
+    float fi = float(i);
+    float o = fi*fi*0.011+fi*0.012;          /* sqrt-ish spread */
+    vec2 dx = vec2(o*uTexel.x*24.0, 0.0);
+    acc += texture(uSrc, vUv+dx).rgb*w;
+    acc += texture(uSrc, vUv-dx).rgb*w;
+    wsum += 2.0*w;
+    w *= 0.82;
+  }
+  outColor = vec4(acc/wsum*vec3(0.62,0.76,1.0), 1.0);
+}`;
+
+/* ---------------- post: composite ---------------- */
+const FS_COMPOSITE = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uScene;
+uniform sampler2D uB0;
+uniform sampler2D uB1;
+uniform sampler2D uB2;
+uniform sampler2D uB3;
+uniform sampler2D uB4;
+uniform sampler2D uStreak;
+uniform float uTime;
+uniform float uBloomStr;
+uniform float uStreakStr;
+uniform float uExposure;
+uniform float uSaturation;
+uniform float uHasGlow;
+uniform float uGrainAmt;
+uniform vec2  uOutTexel;
+
+vec3 aces(vec3 x){
+  return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0);
+}
+float hash12(vec2 p){
+  vec3 q = fract(vec3(p.xyx)*0.1031);
+  q += dot(q, q.yzx+33.33);
+  return fract((q.x+q.y)*q.z);
+}
+void main(){
+  /* mild pincushion + radial chromatic aberration */
+  vec2 cc = vUv-0.5;
+  float r2 = dot(cc,cc);
+  vec2 uv = 0.5+cc*(1.0-0.045*r2);
+  float ca = 0.0125*r2;
+  vec3 col;
+  col.r = texture(uScene, uv+cc*ca).r;
+  col.g = texture(uScene, uv).g;
+  col.b = texture(uScene, uv-cc*ca).b;
+
+  if(uHasGlow > 0.5){
+    vec3 b = texture(uB0, uv).rgb*1.00;
+    b += texture(uB1, uv).rgb*0.80;
+    b += texture(uB2, uv).rgb*0.62;
+    b += texture(uB3, uv).rgb*0.48;
+    b += texture(uB4, uv).rgb*0.36;
+    col += b*(uBloomStr*0.30);
+    col += texture(uStreak, uv).rgb*uStreakStr;
+  }
+  col *= uExposure;
+  col = aces(col);
+
+  float lum = dot(col, vec3(0.2126,0.7152,0.0722));
+  col = mix(vec3(lum), col, uSaturation);
+
+  /* vignette */
+  float vig = 1.0-0.36*smoothstep(0.32, 0.98, length(cc)*1.42);
+  col *= vig;
+
+  /* film grain, luminance-scaled */
+  float g = hash12(vUv*uOutTexel+fract(uTime)*371.0)-0.5;
+  col += g*uGrainAmt*(1.0-lum*0.65);
+
+  outColor = vec4(pow(max(col,0.0), vec3(1.0/2.2)), 1.0);
+}`;
+
+/* ============================================================
+   Minimal GL harness
+   ============================================================ */
+function compile(type, src){
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if(!gl.getShaderParameter(sh, gl.COMPILE_STATUS)){
+    const log = gl.getShaderInfoLog(sh);
+    console.error('shader compile failed:', log);
+    throw new Error('shader: '+log);
+  }
+  return sh;
+}
+class Program {
+  constructor(fsSrc){
+    this.prog = gl.createProgram();
+    gl.attachShader(this.prog, compile(gl.VERTEX_SHADER, VS));
+    gl.attachShader(this.prog, compile(gl.FRAGMENT_SHADER, fsSrc));
+    gl.linkProgram(this.prog);
+    if(!gl.getProgramParameter(this.prog, gl.LINK_STATUS)){
+      throw new Error('link: '+gl.getProgramInfoLog(this.prog));
+    }
+    this.loc = {};
+  }
+  use(){ gl.useProgram(this.prog); return this; }
+  u(name){
+    if(!(name in this.loc)){
+      const l = gl.getUniformLocation(this.prog, name);
+      if(l === null) console.warn('Gargantua: uniform not active:', name);
+      this.loc[name] = l;
+    }
+    return this.loc[name];
+  }
+  f(n,x){ const l=this.u(n); if(l) gl.uniform1f(l,x); return this; }
+  i(n,x){ const l=this.u(n); if(l) gl.uniform1i(l,x); return this; }
+  v2(n,x,y){ const l=this.u(n); if(l) gl.uniform2f(l,x,y); return this; }
+  v3(n,x,y,z){ const l=this.u(n); if(l) gl.uniform3f(l,x,y,z); return this; }
+  m3(n,m){ const l=this.u(n); if(l) gl.uniformMatrix3fv(l,false,m); return this; }
+  tex(n,unit,tex){ const l=this.u(n); if(l){ gl.activeTexture(gl.TEXTURE0+unit); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(l,unit);} return this; }
+}
+
+function makeTarget(w, h){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, HDR_FMT, w, h, 0, gl.RGBA, HDR_TYPE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  /* allocation failures (OOM, MAX_TEXTURE_SIZE, lying extension adverts)
+     must be loud: an incomplete FBO otherwise renders silence — black frames */
+  const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE
+                && gl.getError() === gl.NO_ERROR;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if(!complete){
+    gl.deleteFramebuffer(fb); gl.deleteTexture(tex);
+    throw new Error('framebuffer alloc failed ('+w+'x'+h+')');
+  }
+  return { fb, tex, w, h };
+}
+function freeTarget(t){ if(!t) return; gl.deleteFramebuffer(t.fb); gl.deleteTexture(t.tex); }
+
+/* fullscreen triangle */
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+const vbo = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,0, 3,-1,0, -1,3,0]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+gl.bindVertexArray(null);
+
+let pScene, pBright, pDown, pBlur, pStreak, pComp;
+try {
+  pScene = new Program(FS_SCENE);
+  pBright = new Program(FS_BRIGHT);
+  pDown = new Program(FS_DOWN);
+  pBlur = new Program(FS_BLUR);
+  pStreak = new Program(FS_STREAK);
+  pComp = new Program(FS_COMPOSITE);
+} catch(err){
+  console.error(err);
+  veil.classList.add('fail');
+  veil.querySelector('.msg-fail .headline').textContent = 'Shader compilation failed';
+  const p = veil.querySelector('.msg-fail p');
+  p.textContent = String(err.message||err).slice(0, 300);
+  throw err;
+}
+
+function drawQuad(){ gl.bindVertexArray(vao); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+function begin(target){
+  if(target){ gl.bindFramebuffer(gl.FRAMEBUFFER, target.fb); gl.viewport(0,0,target.w,target.h); }
+  else { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0,0,canvas.width,canvas.height); }
+}
+
+/* ============================================================
+   State
+   ============================================================ */
+const QUALITY = {
+  low:    { steps: 120, dt: 1.50 },
+  medium: { steps: 190, dt: 1.00 },
+  high:   { steps: 290, dt: 0.75 },
+  ultra:  { steps: 400, dt: 0.58 },
+};
+const QORDER = ['low','medium','high','ultra'];
+/* discrete internal-resolution tiers — no arbitrary values, no realloc churn */
+const TIERS = [0.5, 0.6, 0.7, 0.85, 1.0];
+const PALETTES = {
+  ember: { gain: 1.18, doppler: 1.00, sat: 1.14, tint: [1.06,0.97,0.88], bloomStr: 0.95, streakStr: 0.34 },
+  film:  { gain: 0.96, doppler: 0.32, sat: 0.80, tint: [1.05,1.00,0.94], bloomStr: 1.10, streakStr: 0.22 },
+};
+const VIEWS = {
+  orbit:    { el: 0.155, dist: 13.5 },
+  graze:    { el: 0.030, dist: 10.5 },
+  overhead: { el: 0.95,  dist: 17.0 },
+};
+
+const state = {
+  quality: 'auto',
+  qKey: 'medium',
+  resScale: 1.0,
+  tierIdx: 4,
+  paused: false,
+  lensing: true,
+  doppler: true,
+  bloom: true,
+  palette: 'ember',
+  hudHidden: false,
+};
+
+const cam = {
+  az: 0.6, el: 0.55, dist: 26.0,           /* intro start */
+  tAz: 0.6, tEl: VIEWS.orbit.el, tDist: VIEWS.orbit.dist,
+  autoBlend: 1.0, idleTimer: 0,
+};
+const palCur = Object.assign({}, PALETTES.ember, { tint: PALETTES.ember.tint.slice() });
+const palTgt = { gain: 0, doppler: 0, sat: 0, tint: [0,0,0], bloomStr: 0, streakStr: 0 };
+
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+if(reducedMotion){
+  cam.autoBlend = 0.0;
+  state.quality = 'medium';
+  state.qKey = 'medium';
+  cam.dist = VIEWS.orbit.dist;
+}
+
+/* intro choreography */
+let introT = 0;
+const INTRO_LEN = 9.0;
+if(reducedMotion) introT = INTRO_LEN;
+
+/* ---------- sizing / render targets ---------- */
+const DPR_CAP = 1.75;
+let W = 0, H = 0, dpr = 1;
+let rtScene = null, rtBright = null, rtStreak = null;
+let pyramid = [];   /* {a,b} per level */
+
+function buildAll(iw, ih){
+  rtScene = makeTarget(iw, ih);
+  rtBright = makeTarget(iw>>1, ih>>1);
+  rtStreak = makeTarget(iw>>1, ih>>1);
+  pyramid = [];
+  let lw = rtBright.w, lh = rtBright.h;
+  for(let i=0;i<5;i++){
+    lw = Math.max(4, lw>>1); lh = Math.max(4, lh>>1);
+    pyramid.push({ a: makeTarget(lw,lh), b: makeTarget(lw,lh) });
+  }
+}
+function allocTargets(force){
+  const iw = Math.max(8, Math.floor(W*state.resScale));
+  const ih = Math.max(8, Math.floor(H*state.resScale));
+  if(!force && rtScene && rtScene.w === iw && rtScene.h === ih) return;
+  freeAll();
+  try {
+    buildAll(iw, ih);
+  } catch(err) {
+    /* graceful degradation: retry once in LDR before surfacing failure */
+    freeAll();
+    if(HDR_FMT !== gl.RGBA8){
+      console.warn('Gargantua: HDR targets unavailable, falling back to LDR —', err.message);
+      HDR_FMT = gl.RGBA8; HDR_TYPE = gl.UNSIGNED_BYTE; BLOOM_THRESHOLD = 0.55;
+      try { buildAll(iw, ih); return; } catch(_){ /* surface below */ }
+    }
+    console.error('Gargantua:', err.message || err);
+    veil.classList.add('fail');
+    veil.querySelector('.msg-fail .headline').textContent = 'GPU memory allocation failed';
+    veil.querySelector('.msg-fail p').textContent = 'The renderer could not allocate frame buffers at this resolution. Try a smaller window or a device with more GPU memory.';
+  }
+}
+function freeAll(){
+  freeTarget(rtScene); freeTarget(rtBright); freeTarget(rtStreak);
+  for(const lvl of pyramid){ freeTarget(lvl.a); freeTarget(lvl.b); }
+}
+function resize(){
+  dpr = Math.min(devicePixelRatio || 1, DPR_CAP);
+  W = Math.max(2, Math.round(canvas.clientWidth*dpr));
+  H = Math.max(2, Math.round(canvas.clientHeight*dpr));
+  canvas.width = W; canvas.height = H;
+  allocTargets(true);
+}
+/* size changes are debounced: window-drag and iOS chrome collapse would
+   otherwise trigger a full target realloc per changed-size frame */
+let rsTimer = null;
+function queueResize(){
+  if(rsTimer !== null) return;
+  rsTimer = setTimeout(() => {
+    rsTimer = null;
+    dpr = Math.min(devicePixelRatio || 1, DPR_CAP);
+    const fw = Math.max(2, Math.round(canvas.clientWidth*dpr));
+    const fh = Math.max(2, Math.round(canvas.clientHeight*dpr));
+    if(fw === W && fh === H) return;
+    W = fw; H = fh;
+    canvas.width = W; canvas.height = H;
+    allocTargets(false);
+  }, 180);
+}
+new ResizeObserver(queueResize).observe(canvas);
+resize();
+
+/* ============================================================
+   Input
+   ============================================================ */
+const pointers = new Map();
+let pinchDist = 0;
+function wake(){ cam.idleTimer = 0; }
+function markInteracted(){ if(introT < INTRO_LEN){ introT = INTRO_LEN; finishIntro(); } }
+
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if(pointers.size === 2){
+    const p = [...pointers.values()];
+    pinchDist = Math.hypot(p[0].x-p[1].x, p[0].y-p[1].y);
+  }
+  canvas.classList.add('dragging');
+  wake(); markInteracted();
+});
+canvas.addEventListener('pointermove', e => {
+  if(!pointers.has(e.pointerId)) return;
+  const prev = pointers.get(e.pointerId);
+  const dx = e.clientX-prev.x, dy = e.clientY-prev.y;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if(pointers.size === 1){
+    cam.tAz -= dx*0.0042;
+    cam.tEl = clamp(cam.tEl + dy*0.0032, -1.35, 1.35);
+    wake();
+  } else if(pointers.size === 2){
+    const p = [...pointers.values()];
+    const d = Math.hypot(p[0].x-p[1].x, p[0].y-p[1].y);
+    if(pinchDist > 0 && d > 0.5) cam.tDist = clamp(cam.tDist*(pinchDist/d), 7.5, 30.0);
+    pinchDist = d;
+    wake();
+  }
+});
+function releasePointer(e){
+  pointers.delete(e.pointerId);
+  if(pointers.size === 0) canvas.classList.remove('dragging');
+}
+canvas.addEventListener('pointerup', releasePointer);
+canvas.addEventListener('pointercancel', releasePointer);
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.tDist = clamp(cam.tDist*Math.exp(e.deltaY*0.0011), 7.5, 30.0);
+  wake(); markInteracted();
+}, { passive: false });
+
+function clamp(x, a, b){ return Math.min(b, Math.max(a, x)); }
+
+/* ---------- controls wiring ---------- */
+function setGroup(selector, attr, val){
+  document.querySelectorAll(selector).forEach(b => {
+    const on = b.dataset[attr] === val;
+    b.classList.toggle('on', on);
+    if(attr === 'pal' || attr === 'view' || attr === 'q') b.setAttribute('aria-pressed', on);
+  });
+}
+document.querySelectorAll('.chip.view').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+document.querySelectorAll('.chip.qual').forEach(b => b.addEventListener('click', () => setQuality(b.dataset.q)));
+document.querySelectorAll('.chip.pal').forEach(b => b.addEventListener('click', () => setPalette(b.dataset.pal)));
+document.querySelectorAll('.chip.tog').forEach(b => b.addEventListener('click', () => {
+  const id = b.id;
+  if(id === 'btnLens') setLensing(!state.lensing);
+  if(id === 'btnDopp') setDoppler(!state.doppler);
+  if(id === 'btnBloom') setBloom(!state.bloom);
+}));
+document.getElementById('btnPause').addEventListener('click', togglePause);
+document.getElementById('btnHelp').addEventListener('click', toggleHelp);
+
+function setView(v){
+  cam.tEl = VIEWS[v].el; cam.tDist = VIEWS[v].dist;
+  setGroup('.chip.view', 'view', v);
+  wake();
+}
+function setQuality(q){
+  if(state.quality === q) return;
+  state.quality = q;
+  /* auto seeds conservatively; the controller climbs when headroom allows */
+  state.qKey = q === 'auto' ? 'medium' : q;
+  state.tierIdx = TIERS.length-1;
+  state.resScale = TIERS[state.tierIdx];
+  setGroup('.chip.qual', 'q', q);
+  allocTargets(false);
+}
+function cycleQuality(){
+  const CYCLE = ['auto', ...QORDER];
+  const next = CYCLE[(CYCLE.indexOf(state.quality)+1)%CYCLE.length];
+  setQuality(next);
+}
+function setPalette(p){
+  state.palette = p;
+  const t = PALETTES[p];
+  palTgt.gain = t.gain; palTgt.doppler = t.doppler; palTgt.sat = t.sat;
+  palTgt.bloomStr = t.bloomStr; palTgt.streakStr = t.streakStr;
+  for(let i=0;i<3;i++) palTgt.tint[i] = t.tint[i];
+  document.getElementById('tPreset').textContent = p.toUpperCase();
+  setGroup('.chip.pal', 'pal', p);
+}
+function setLensing(v){ state.lensing = v; const b=document.getElementById('btnLens'); b.classList.toggle('on', v); b.setAttribute('aria-pressed', String(v)); }
+function setDoppler(v){ state.doppler = v; const b=document.getElementById('btnDopp'); b.classList.toggle('on', v); b.setAttribute('aria-pressed', String(v)); }
+function setBloom(v){ state.bloom = v; const b=document.getElementById('btnBloom'); b.classList.toggle('on', v); b.setAttribute('aria-pressed', String(v)); }
+function togglePause(){
+  state.paused = !state.paused;
+  document.getElementById('btnPause').textContent = state.paused ? 'Resume' : 'Pause';
+}
+function setHelpOpen(open){
+  document.getElementById('helpcard').classList.toggle('open', open);
+  document.getElementById('btnHelp').setAttribute('aria-expanded', String(open));
+}
+function toggleHelp(){
+  const c = document.getElementById('helpcard');
+  setHelpOpen(!c.classList.contains('open'));
+}
+function toggleHud(){
+  state.hudHidden = !state.hudHidden;
+  hudEl.classList.toggle('hidden', state.hudHidden);
+  /* intro dismissal is one-way: it must never resurrect after finishing */
+  if(state.hudHidden) introEl.classList.add('gone');
+}
+
+addEventListener('keydown', e => {
+  if(e.repeat) return;
+  /* a focused chip keeps native Space/Enter activation */
+  if((e.key === ' ' || e.key === 'Enter') && e.target instanceof HTMLButtonElement) return;
+  switch(e.key){
+    case ' ': e.preventDefault(); togglePause(); break;
+    case '1': setView('orbit'); markInteracted(); break;
+    case '2': setView('graze'); markInteracted(); break;
+    case '3': setView('overhead'); markInteracted(); break;
+    case 'l': case 'L': setLensing(!state.lensing); break;
+    case 'd': case 'D': setDoppler(!state.doppler); break;
+    case 'b': case 'B': setBloom(!state.bloom); break;
+    case 'p': case 'P': setPalette(state.palette === 'ember' ? 'film' : 'ember'); break;
+    case 'q': case 'Q': cycleQuality(); break;
+    case 'h': case 'H': toggleHud(); break;
+    case '?': toggleHelp(); break;
+    case 'Escape': setHelpOpen(false); break;
+  }
+});
+
+/* double-click cinema mode is mouse-only: touch has no H key to come back */
+if(!matchMedia('(pointer: coarse)').matches){
+  canvas.addEventListener('dblclick', toggleHud);
+}
+
+/* context loss — announce, then re-init cleanly via reload on restore */
+canvas.addEventListener('webglcontextlost', () => {
+  veil.classList.remove('off');
+  veil.querySelector('.msg-boot').innerHTML = '<span class="label" style="color:var(--danger)">GPU context lost &mdash; recovering&hellip;</span>';
+});
+canvas.addEventListener('webglcontextrestored', () => location.reload());
+
+/* ---------- intro helpers ---------- */
+function finishIntro(){ introEl.classList.add('gone'); }
+setTimeout(finishIntro, (INTRO_LEN+1.6)*1000);
+
+/* ============================================================
+   Frame loop
+   ============================================================ */
+let prevTs = performance.now();
+let simTime = 0;
+let emaMs = 16, frameCount = 0, adaptClock = 0;
+let winMin = Infinity;          /* best frame time this evaluation window */
+let minMs = Infinity;           /* rolling achievable frame time (vsync-aware) */
+let adaptDir = 0, adaptStreak = 0;
+let fpsFrames = 0, fpsClock = 0;
+const tFps = document.getElementById('tFps');
+const tRes = document.getElementById('tRes');
+const tSteps = document.getElementById('tSteps');
+
+function easeInOutQuint(x){ return x < 0.5 ? 16*x*x*x*x*x : 1-Math.pow(-2*x+2,5)/2; }
+
+function updateCamera(dt){
+  /* idle -> resume auto orbit */
+  cam.idleTimer += dt;
+  const wantAuto = reducedMotion ? 0 : 1;
+  const goal = (!state.paused && cam.idleTimer > 6) ? wantAuto : 0;
+  cam.autoBlend += (goal-cam.autoBlend)*(1-Math.exp(-dt*1.4));
+
+  if(cam.autoBlend > 0.001 && !state.paused) cam.tAz += 0.052*dt*cam.autoBlend;
+
+  /* intro dolly */
+  let dist = cam.tDist, el = cam.tEl;
+  if(introT < INTRO_LEN){
+    introT += dt;
+    const k = easeInOutQuint(clamp(introT/INTRO_LEN, 0, 1));
+    dist = 26.0+(cam.tDist-26.0)*k;
+    el = 0.55+(cam.tEl-0.55)*k;
+  }
+
+  const lam = 1-Math.exp(-dt*6.5);
+  cam.az += (cam.tAz-cam.az)*lam;
+  cam.el += (el-cam.el)*lam;
+  cam.dist += (dist-cam.dist)*lam;
+
+  /* gentle breathing + vertical bob while auto-orbiting */
+  const breathe = 1.0+(reducedMotion ? 0 : 0.045*Math.sin(simTime*0.043));
+  const bob = 0.028*Math.sin(simTime*0.11)*cam.autoBlend*(state.paused ? 0 : 1);
+  const elR = clamp(cam.el+bob, -1.35, 1.35);
+  const ce = Math.cos(elR), se = Math.sin(elR);
+  const d = cam.dist*breathe;
+  return [ d*ce*Math.sin(cam.az), d*se, d*ce*Math.cos(cam.az) ];
+}
+
+function tweenPalette(dt){
+  const k = 1-Math.exp(-dt*2.4);
+  palCur.gain += (palTgt.gain-palCur.gain)*k;
+  palCur.doppler += (palTgt.doppler-palCur.doppler)*k;
+  palCur.sat += (palTgt.sat-palCur.sat)*k;
+  palCur.bloomStr += (palTgt.bloomStr-palCur.bloomStr)*k;
+  palCur.streakStr += (palTgt.streakStr-palCur.streakStr)*k;
+  for(let i=0;i<3;i++) palCur.tint[i] += (palTgt.tint[i]-palCur.tint[i])*k;
+}
+
+function render(now){
+  requestAnimationFrame(render);
+  let dt = (now-prevTs)/1000;
+  prevTs = now;
+  if(dt > 0.05) dt = 0.05;
+  if(!(dt > 0)) return;
+
+  if(!state.paused) simTime += dt;
+  queueResize();
+
+  const pos = updateCamera(dt);
+  tweenPalette(dt);
+
+  /* camera basis (columns: right, up, forward) */
+  const fx = -pos[0], fy = -pos[1], fz = -pos[2];
+  const fl = Math.hypot(fx,fy,fz);
+  const F = [fx/fl, fy/fl, fz/fl];
+  /* right = normalize(cross(forward, worldUp(0,1,0))) */
+  let cx = -F[2], cy = 0, cz = F[0];
+  const cl = Math.hypot(cx,cy,cz) || 1;
+  cx/=cl; cy/=cl; cz/=cl;
+  /* up = cross(right, forward) */
+  const Ux = cy*F[2]-cz*F[1], Uy = cz*F[0]-cx*F[2], Uz = cx*F[1]-cy*F[0];
+  const basis = new Float32Array([cx,cy,cz, Ux,Uy,Uz, F[0],F[1],F[2]]);
+
+  const q = QUALITY[state.qKey];
+  const tanF = Math.tan(31.5*Math.PI/180);
+  const aspect = W/H;
+
+  /* --- scene pass --- */
+  pScene.use()
+    .f('uTime', simTime)
+    .v3('uCamPos', pos[0], pos[1], pos[2])
+    .m3('uBasis', basis)
+    .f('uTanF', tanF)
+    .f('uAspect', aspect)
+    .i('uSteps', q.steps)
+    .f('uDtScale', q.dt)
+    .f('uLensing', state.lensing ? 1 : 0)
+    .f('uDoppler', state.doppler ? palCur.doppler : 0)
+    .f('uGain', palCur.gain)
+    .f('uOpacity', 0.85)
+    .f('uFlow', 0.55)
+    .f('uTwinkle', reducedMotion ? 0.15 : 0.6)
+    .v3('uTint', palCur.tint[0], palCur.tint[1], palCur.tint[2]);
+  begin(rtScene); drawQuad();
+
+  if(state.bloom){
+    /* bright pass at half internal res */
+    pBright.use()
+      .tex('uSrc', 0, rtScene.tex)
+      .v2('uTexel', 1/rtScene.w, 1/rtScene.h)
+      .f('uThreshold', BLOOM_THRESHOLD)
+      .f('uKnee', 0.55);
+    begin(rtBright); drawQuad();
+
+    /* downsample pyramid */
+    let src = rtBright;
+    for(const lvl of pyramid){
+      pDown.use().tex('uSrc',0,src.tex).v2('uTexel',1/src.w,1/src.h);
+      begin(lvl.a); drawQuad();
+      src = lvl.a;
+    }
+    /* separable blur each level */
+    for(const lvl of pyramid){
+      pBlur.use().tex('uSrc',0,lvl.a.tex).v2('uTexel',1/lvl.a.w,1/lvl.a.h).v2('uDir',1,0);
+      begin(lvl.b); drawQuad();
+      pBlur.use().tex('uSrc',0,lvl.b.tex).v2('uTexel',1/lvl.b.w,1/lvl.b.h).v2('uDir',0,1);
+      begin(lvl.a); drawQuad();
+    }
+    /* anamorphic streak from first level */
+    pStreak.use().tex('uSrc',0,pyramid[0].a.tex).v2('uTexel',1/pyramid[0].a.w,1/pyramid[0].a.h);
+    begin(rtStreak); drawQuad();
+  }
+
+  /* --- composite --- */
+  pComp.use()
+    .tex('uScene', 0, rtScene.tex);
+  for(let i=0;i<5;i++) pComp.tex('uB'+i, 1+i, state.bloom ? pyramid[i].a.tex : rtScene.tex);
+  pComp
+    .tex('uStreak', 6, state.bloom ? rtStreak.tex : rtScene.tex)
+    .f('uTime', simTime)
+    .f('uBloomStr', palCur.bloomStr)
+    .f('uStreakStr', palCur.streakStr)
+    .f('uExposure', 1.05)
+    .f('uSaturation', palCur.sat)
+    .f('uHasGlow', state.bloom ? 1 : 0)
+    .f('uGrainAmt', reducedMotion ? 0.0 : 0.030)
+    .v2('uOutTexel', W, H);
+  begin(null); drawQuad();
+
+  /* --- telemetry + adaptive resolution --- */
+  const ms = dt*1000;
+  if(frameCount > 20) emaMs += (ms-emaMs)*0.08;
+  winMin = Math.min(winMin, ms);
+  frameCount++;
+
+  fpsFrames++; fpsClock += dt;
+  if(fpsClock >= 0.5){
+    tFps.textContent = Math.round(fpsFrames/fpsClock)+' fps';
+    fpsFrames = 0; fpsClock = 0;
+    tRes.textContent = Math.round(state.resScale*100)+'%';
+    tSteps.textContent = QUALITY[state.qKey].steps+' steps';
+  }
+  if(state.quality === 'auto'){
+    adaptClock += dt;
+    if(adaptClock >= 0.8 && frameCount > 40){
+      adaptClock = 0;
+      /* vsync pins frame time at the refresh interval regardless of load,
+         so thresholds derive from the observed best, not absolute constants */
+      minMs = Math.min(minMs*1.005, winMin);   /* gentle relax keeps recovery possible */
+      if(!(minMs > 0)) minMs = winMin;
+      winMin = Infinity;
+      const slow = emaMs > Math.max(23, minMs*1.55);
+      const fast = emaMs <= minMs*1.20+0.4;
+      const dir = slow ? -1 : (fast ? 1 : 0);
+      adaptStreak = (dir !== 0 && dir === adaptDir) ? adaptStreak+1 : 1;
+      adaptDir = dir;
+      if(adaptStreak >= 2){
+        adaptStreak = 1;
+        const qi = QORDER.indexOf(state.qKey);
+        let dirty = false;
+        if(dir < 0){
+          if(state.tierIdx > 0){ state.tierIdx--; dirty = true; }
+          else if(qi > 0){                     /* resolution floor reached: shed steps */
+            state.qKey = QORDER[qi-1];
+            state.tierIdx = TIERS.length-2;
+            dirty = true;
+          }
+        } else if(dir > 0){
+          if(state.tierIdx < TIERS.length-1){ state.tierIdx++; dirty = true; }
+          else if(qi >= 0 && qi < QORDER.indexOf('high')){   /* auto caps at high */
+            state.qKey = QORDER[qi+1];
+            dirty = true;
+          }
+        }
+        if(dirty){
+          state.resScale = TIERS[state.tierIdx];
+          allocTargets(false);
+        }
+      }
+    }
+  }
+}
+
+/* ---------- boot ---------- */
+setPalette('ember');
+setGroup('.chip.qual', 'q', state.quality);
+veil.classList.add('off');
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

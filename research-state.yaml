@@ -1,0 +1,29 @@
+project: gargantua
+question: >
+  Can a real-time browser black-hole renderer reach photorealistic,
+  pixel-perfect quality with zero visual bugs while being scientifically
+  accurate — including physically correct SCALE (units, ISCO, temperatures,
+  velocities, shadow size)?
+criteria_locked:
+  photorealism: cold-reviewer panel scores; no paper-thin-disk or banding artifacts
+  pixel_perfect: rendered shadow diameter matches analytic b_crit=3*sqrt(3)*rs prediction within 0.5%
+  no_visual_bugs: two consecutive fully-clean cold validation rounds (>=6 reviewers each)
+  scientific_scale: HUD reports physical units (rs in km, distances in AU, T in K);
+    inner disk edge at ISCO 3rs; T(r) follows Shakura-Sunyaev incl. torque factor;
+    orbital beta(r) = sqrt(M/(r-2M)) exact; science palette from Planck locus
+validation_target: 10 cold validation rounds minimum (rounds completed: 0)
+state: inner-loop
+hypotheses:
+  H1: ISCO-exact inner edge (DISK_IN 2.6->3.0 rs) + plunging-region haze preserves drama, raises accuracy
+  H2: Shakura-Sunyaev T(r) = T0 (r/rin)^-3/4 (1-sqrt(rin/r))^{1/4} replaces pure power law; Planck-locus color mapping
+  H3: physical scale layer — mass selector (10 Msun stellar / 4e6 SgrA* / 1e8 Gargantua), HUD in km/AU/K, science-vs-cinema palette toggle
+  H4: volumetric slab disk (exp(-y^2/H^2) integration) replaces plane-crossing; kills paper-thin look at grazing angles
+  H5: temporal stability — star twinkle shimmer and ring dashing under motion; evaluate TAA-lite jitter accumulation
+  H6: photon-ring convergence — measure rendered shadow radius vs analytic across quality tiers; tune dt floor until <0.5% error at high/ultra
+  H7: doppler orientation audit — verify bright-limb side matches texture advection direction and GR sign conventions
+trajectory: []
+lessons:
+  - three r185 prepends '#define SHADER_TYPE/NAME' even to RawShaderMaterial; shader strings must NOT carry their own #version — glslVersion: GLSL3 makes three emit exactly one legal version line
+  - ctx_shell has a hard 120s cap; long installs/servers must be detached via node child_process (tools/detached-npm.mjs pattern)
+  - native Bash tool is gated (eval wrapper trips lean-ctx allowlist); only ctx_shell MCP shell usable, redirects/downloads blocked
+  - headless Chrome + puppeteer-core with system Chrome works for GPU rendering verification; preserveDrawingBuffer:false means sample pixels inside a hooked rAF callback

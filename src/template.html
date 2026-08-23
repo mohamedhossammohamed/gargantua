@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gargantua</title>
+<meta name="description" content="Real-time general-relativistic black hole renderer — lensed accretion disk, Doppler beaming, volumetric bloom.">
+<style>
+/* ============================================================
+   GARGANTUA — mission-control treatment
+   Single committed visual world: instrument-panel dark,
+   amber accent echoing disk temperature. Explicitly painted;
+   no theme switching (a light mode around a black hole is absurd).
+   ============================================================ */
+:root {
+  --void:      #04050a;
+  --panel:     rgba(10, 13, 22, 0.55);
+  --hairline:  rgba(226, 233, 248, 0.14);
+  --ink:       #e8ecf6;
+  --dim:       rgba(210, 219, 238, 0.55);
+  --faint:     rgba(210, 219, 238, 0.32);
+  --amber:     #ffb454;
+  --amber-dim: rgba(255, 180, 84, 0.16);
+  --danger:    #ff6b57;
+  --sans: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--sans);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+#view {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+}
+#view.dragging { cursor: grabbing; }
+
+/* ---------- HUD chrome ---------- */
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+#hud.hidden, #intro.gone { opacity: 0; }
+#hud.hidden { visibility: hidden; }   /* invisible chrome must not stay clickable */
+#hud { transition: opacity 0.45s ease, visibility 0.45s; }
+
+.label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* brand — top left */
+#brand { position: absolute; top: max(22px, env(safe-area-inset-top)); left: max(26px, env(safe-area-inset-left)); user-select: none; }
+#brand h1 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.52em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-indent: 0.52em; /* balance tracking */
+}
+#brand p { margin-top: 6px; }
+
+/* telemetry — bottom left */
+#telemetry {
+  position: absolute; left: max(26px, env(safe-area-inset-left)); bottom: max(24px, env(safe-area-inset-bottom));
+  font-family: var(--mono); font-size: 10.5px; line-height: 1.9;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+#telemetry b { color: var(--ink); font-weight: 500; }
+#telemetry .k { display: inline-block; min-width: 9.5ch; color: var(--faint); letter-spacing: 0.14em; text-transform: uppercase; font-size: 9px; }
+#telemetry .live { color: var(--amber); }
+
+/* controls — bottom right */
+#controls {
+  position: absolute; right: max(26px, env(safe-area-inset-right)); bottom: max(24px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 9px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.cgroup { display: flex; align-items: center; gap: 7px; pointer-events: auto; }
+.cgroup .label { margin-right: 3px; }
+.chip {
+  appearance: none; border: 1px solid var(--hairline);
+  background: var(--panel);
+  color: var(--dim);
+  font-family: var(--mono); font-size: 9.5px;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  padding: 5px 11px; border-radius: 2px;
+  cursor: pointer;
+  transition: color .18s ease, border-color .18s ease, background .18s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.chip:hover { color: var(--ink); border-color: rgba(226,233,248,0.34); }
+.chip:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
+.chip.on { color: var(--amber); border-color: rgba(255,180,84,0.55); background: var(--amber-dim); }
+
+/* status — top right */
+#status { position: absolute; top: max(24px, env(safe-area-inset-top)); right: max(26px, env(safe-area-inset-right)); display: flex; gap: 7px; pointer-events: auto; align-items: flex-start; }
+
+/* help card */
+#helpcard {
+  position: absolute; top: 68px; right: max(26px, env(safe-area-inset-right));
+  width: 252px;
+  border: 1px solid var(--hairline);
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 16px 18px 14px;
+  border-radius: 3px;
+  display: none;
+}
+#helpcard.open { display: block; }
+#helpcard table { width: 100%; border-collapse: collapse; margin-top: 9px; }
+#helpcard td { font-size: 11px; color: var(--dim); padding: 3.5px 0; vertical-align: middle; }
+#helpcard td:first-child { width: 76px; }
+kbd {
+  font-family: var(--mono); font-size: 9px;
+  border: 1px solid var(--hairline); border-bottom-width: 2px;
+  border-radius: 2px; padding: 1.5px 5px; color: var(--ink);
+  background: rgba(255,255,255,0.04);
+}
+
+/* ---------- intro title card ---------- */
+#intro {
+  position: fixed; inset: 0; z-index: 20;
+  display: grid; place-content: center; text-align: center;
+  pointer-events: none;
+  transition: opacity 1.6s ease;
+}
+#intro h2 {
+  font-weight: 200;
+  font-size: clamp(30px, 6vw, 62px);
+  letter-spacing: 0.42em; text-indent: 0.42em;
+  text-transform: uppercase;
+  color: var(--ink);
+  opacity: 0;
+  animation: introIn 2.4s ease 0.7s forwards;
+}
+#intro p {
+  margin-top: 18px;
+  opacity: 0;
+  animation: introIn 2.2s ease 1.6s forwards;
+}
+#intro .hint { margin-top: 44px; opacity: 0; animation: introIn 2s ease 3.4s forwards; }
+@keyframes introIn { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  #intro h2, #intro p, #intro .hint { animation-duration: 0.01s; animation-delay: 0s; }
+  #hud, #intro { transition: none; }
+}
+
+/* compact layout: narrow viewports shed chrome, keep the black hole */
+@media (max-width: 720px) {
+  #brand p { display: none; }
+  #telemetry { bottom: auto; top: 64px; left: 20px; font-size: 9.5px; }
+  #telemetry div:nth-child(n+3) { display: none; }
+  #controls { right: 16px; bottom: 16px; gap: 7px; }
+  .cgroup .label { display: none; }
+  .chip { padding: 5px 8px; font-size: 8.5px; letter-spacing: 0.1em; }
+  #status { top: 18px; right: 16px; }
+  #helpcard { top: 60px; right: 16px; width: 224px; }
+}
+
+/* ---------- veil (boot / failure) ---------- */
+#veil {
+  position: fixed; inset: 0; z-index: 30;
+  background: var(--void);
+  display: grid; place-content: center; text-align: center;
+  transition: opacity 1.1s ease;
+  pointer-events: none;
+}
+#veil.off { opacity: 0; }
+#veil .msg { display: none; }
+#veil.fail .msg-fail { display: block; pointer-events: auto; }
+#veil .msg-fail p { color: var(--dim); font-size: 13px; margin-top: 10px; }
+#veil .msg-fail .headline { color: var(--danger); font-family: var(--mono); font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; }
+</style>
+</head>
+<body>
+
+<canvas id="view" aria-label="Interactive general-relativistic black hole render"></canvas>
+
+<div id="hud">
+  <div id="brand">
+    <h1>Gargantua</h1>
+    <p class="label">General&#8209;relativistic ray tracer &middot; Schwarzschild geodesics</p>
+  </div>
+
+  <div id="telemetry">
+    <div><span class="k">frame</span><b id="tFps">-- fps</b></div>
+    <div><span class="k">internal</span><b id="tRes">--%</b></div>
+    <div><span class="k">integrator</span><b id="tSteps">-- steps</b></div>
+    <div><span class="k">preset</span><b id="tPreset" class="live">EMBER</b></div>
+  </div>
+
+  <div id="controls">
+    <div class="cgroup"><span class="label">View</span>
+      <button class="chip view on" data-view="orbit">Orbit</button>
+      <button class="chip view" data-view="graze">Graze</button>
+      <button class="chip view" data-view="overhead">Overhead</button>
+    </div>
+    <div class="cgroup"><span class="label">Quality</span>
+      <button class="chip qual on" data-q="auto">Auto</button>
+      <button class="chip qual" data-q="low">Low</button>
+      <button class="chip qual" data-q="medium">Med</button>
+      <button class="chip qual" data-q="high">High</button>
+      <button class="chip qual" data-q="ultra">Ultra</button>
+    </div>
+    <div class="cgroup"><span class="label">Physics</span>
+      <button class="chip tog on" id="btnLens">Lensing</button>
+      <button class="chip tog on" id="btnDopp">Doppler</button>
+      <button class="chip tog on" id="btnBloom">Bloom</button>
+    </div>
+    <div class="cgroup"><span class="label">Palette</span>
+      <button class="chip pal on" data-pal="ember">Ember</button>
+      <button class="chip pal" data-pal="film">Film</button>
+    </div>
+  </div>
+
+  <div id="status">
+    <button class="chip" id="btnPause">Pause</button>
+    <button class="chip" id="btnHelp" aria-expanded="false">?</button>
+  </div>
+
+  <div id="helpcard" role="dialog" aria-label="Keyboard shortcuts">
+    <span class="label">Command reference</span>
+    <table>
+      <tr><td><kbd>drag</kbd></td><td>orbit camera</td></tr>
+      <tr><td><kbd>scroll</kbd></td><td>dolly in / out</td></tr>
+      <tr><td><kbd>1 2 3</kbd></td><td>view presets</td></tr>
+      <tr><td><kbd>space</kbd></td><td>freeze motion</td></tr>
+      <tr><td><kbd>L</kbd></td><td>lensing on / off</td></tr>
+      <tr><td><kbd>D</kbd></td><td>Doppler beaming</td></tr>
+      <tr><td><kbd>B</kbd></td><td>bloom</td></tr>
+      <tr><td><kbd>P</kbd></td><td>palette preset</td></tr>
+      <tr><td><kbd>Q</kbd></td><td>cycle quality</td></tr>
+      <tr><td><kbd>H</kbd></td><td>hide interface</td></tr>
+    </table>
+  </div>
+</div>
+
+<div id="intro">
+  <h2>Gargantua</h2>
+  <p class="label">Light, bent to its breaking point</p>
+  <p class="hint label">Drag to orbit &middot; Scroll to approach</p>
+</div>
+
+<div id="veil">
+  <div class="msg msg-boot"><span class="label">Integrating null geodesics&hellip;</span></div>
+  <div class="msg msg-fail">
+    <div class="headline">Renderer unavailable</div>
+    <p>This scene requires WebGL2. Try a recent Chrome, Edge, Firefox or Safari&nbsp;15+, and make sure hardware acceleration is enabled.</p>
+  </div>
+</div>
+
+<!--BUNDLE-->
+</body>
+</html>
