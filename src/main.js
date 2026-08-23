@@ -86,8 +86,9 @@ function freeTarget(t){ if(t) t.dispose(); }
 /* ---------- materials ---------- */
 const mScene = makeMaterial(FS_SCENE, {
   uTime:{value:0}, uCamPos:{value:new THREE.Vector3()}, uBasis:{value:new THREE.Matrix3()},
-  uTanF:{value:1}, uAspect:{value:1}, uSteps:{value:290}, uDtScale:{value:0.75},
+  uTanF:{value:1}, uAspect:{value:1}, uSteps:{value:800}, uDtScale:{value:1.0},
   uLensing:{value:1}, uDoppler:{value:1}, uBeamExp:{value:3},
+  uScience:{value:0}, uDiskIn:{value:2.6}, uTNorm:{value:0.354},
   uGain:{value:1.18}, uOpacity:{value:0.85},
   uFlow:{value:0.55}, uTwinkle:{value:0.6}, uTint:{value:new THREE.Vector3(1.06,0.97,0.88)},
 });
@@ -127,6 +128,19 @@ const VIEWS = {
   graze:    { el: 0.030, dist: 10.5 },
   overhead: { el: 0.95,  dist: 17.0 },
 };
+/* H3 — physical mass presets. rs = 2.953 km x (M/Msun);
+   T_max = 6.3e7 K x (10 Msun / M)^{1/4} at Eddington-ish accretion */
+const MASSES = [
+  { label: 'STELLAR 10 M',  msun: 10 },
+  { label: 'SGR A* 4.3e6',  msun: 4.3e6 },
+  { label: 'GARGANTUA 1e8', msun: 1e8 },
+];
+const RS_KM_PER_MSUN = 2.953;
+const AU_KM = 1.496e8;
+function massPhysics(msun){
+  const rsKm = RS_KM_PER_MSUN*msun;
+  return { rsKm, tMaxK: 6.3e7*Math.pow(10/msun, 0.25) };
+}
 
 const state = {
   quality: 'auto',
@@ -139,6 +153,7 @@ const state = {
   bloom: true,
   palette: 'ember',
   scienceMode: false,
+  massIdx: 0,
   hudHidden: false,
 };
 
@@ -326,6 +341,8 @@ document.querySelectorAll('.chip.tog').forEach(b => b.addEventListener('click', 
 }));
 document.getElementById('btnPause').addEventListener('click', togglePause);
 document.getElementById('btnHelp').addEventListener('click', toggleHelp);
+document.getElementById('btnSci').addEventListener('click', () => setScience(!state.scienceMode));
+document.getElementById('btnMass').addEventListener('click', cycleMass);
 
 function setView(v){
   cam.tEl = VIEWS[v].el; cam.tDist = VIEWS[v].dist;
@@ -357,6 +374,32 @@ function setPalette(p){
   setGroup('.chip.pal', 'pal', p);
 }
 function setLensing(v){ state.lensing = v; const b=document.getElementById('btnLens'); b.classList.toggle('on', v); b.setAttribute('aria-pressed', String(v)); }
+function setScience(v){
+  state.scienceMode = v;
+  const b = document.getElementById('btnSci');
+  b.classList.toggle('on', v); b.setAttribute('aria-pressed', String(v));
+  updateScienceHud();
+}
+function cycleMass(){
+  state.massIdx = (state.massIdx+1)%MASSES.length;
+  document.getElementById('btnMass').textContent = 'M '+MASSES[state.massIdx].label;
+  updateScienceHud();
+}
+const tRs = document.getElementById('tRs'), tCam = document.getElementById('tCam'),
+      tTmax = document.getElementById('tTmax');
+function updateScienceHud(){
+  const { rsKm, tMaxK } = massPhysics(MASSES[state.massIdx].msun);
+  const au = rsKm/AU_KM;
+  tRs.textContent = rsKm >= 0.01*AU_KM
+    ? (rsKm/AU_KM).toFixed(2)+' AU ('+eng(rsKm)+'km)'
+    : eng(rsKm)+'km';
+  tTmax.textContent = eng(tMaxK)+'K';
+}
+function eng(x){
+  if(x >= 1e6) return (x/1e6).toFixed(2)+'e6 ';
+  if(x >= 1e3) return (x/1e3).toFixed(1)+'e3 ';
+  return x.toPrecision(3)+' ';
+}
 function setDoppler(v){ state.doppler = v; const b=document.getElementById('btnDopp'); b.classList.toggle('on', v); b.setAttribute('aria-pressed', String(v)); }
 function setBloom(v){ state.bloom = v; const b=document.getElementById('btnBloom'); b.classList.toggle('on', v); b.setAttribute('aria-pressed', String(v)); }
 function togglePause(){
@@ -392,6 +435,8 @@ addEventListener('keydown', e => {
     case 'b': case 'B': setBloom(!state.bloom); break;
     case 'p': case 'P': setPalette(state.palette === 'ember' ? 'film' : 'ember'); break;
     case 'q': case 'Q': cycleQuality(); break;
+    case 'y': case 'Y': setScience(!state.scienceMode); break;
+    case 'm': case 'M': cycleMass(); break;
     case 'h': case 'H': toggleHud(); break;
     case '?': toggleHelp(); break;
     case 'Escape': setHelpOpen(false); break;
@@ -490,6 +535,9 @@ function updateSceneUniforms(){
   u.uLensing.value = state.lensing ? 1 : 0;
   u.uDoppler.value = state.doppler ? palCur.doppler : 0;
   u.uBeamExp.value = state.scienceMode ? 4 : 3;
+  u.uScience.value = state.scienceMode ? 1 : 0;
+  u.uDiskIn.value = state.scienceMode ? 3.0 : 2.6;
+  u.uTNorm.value = massPhysics(MASSES[state.massIdx].msun).tMaxK/1e7;
   u.uGain.value = palCur.gain;
   u.uOpacity.value = 0.85;
   u.uFlow.value = 0.55;
@@ -584,6 +632,11 @@ function render(now){
     fpsFrames = 0; fpsClock = 0;
     tRes.textContent = Math.round(state.resScale*100)+'%';
     tSteps.textContent = QUALITY[state.qKey].steps+' steps';
+    /* live scale readout */
+    const { rsKm } = massPhysics(MASSES[state.massIdx].msun);
+    const dRs = cam.dist;
+    const dKm = dRs*rsKm;
+    tCam.textContent = dRs.toFixed(1)+' rs = '+(dKm >= 0.05*AU_KM ? (dKm/AU_KM).toFixed(2)+' AU' : eng(dKm)+'km');
   }
   if(state.quality === 'auto'){
     adaptClock += dt;
@@ -631,6 +684,9 @@ function render(now){
    ============================================================ */
 setPalette('ember');
 setGroup('.chip.qual', 'q', state.quality);
+document.getElementById('btnMass').textContent = 'M '+MASSES[state.massIdx].label;
+setScience(state.scienceMode);
+updateScienceHud();
 syncCanvasSize();
 allocTargets(true);
 veil.classList.add('off');

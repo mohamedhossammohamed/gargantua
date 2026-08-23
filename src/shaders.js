@@ -29,6 +29,9 @@ uniform float uLensing;
 uniform float uDoppler;
 uniform float uBeamExp;
 uniform float uGain;
+uniform float uScience;    /* 0 = cinema (artistic), 1 = science (physical) */
+uniform float uDiskIn;     /* 2.6 rs cinematic / 3.0 rs = ISCO exact */
+uniform float uTNorm;      /* T_max in units of 1e7 K (mass preset) */
 uniform float uOpacity;
 uniform float uFlow;
 uniform float uTwinkle;
@@ -72,7 +75,8 @@ float fbm4(vec3 p){
   return s;
 }
 
-/* ---- thermal emission ramp (artistic blackbody) ---- */
+/* ---- thermal emission ramps ---- */
+/* cinema: artistic ramp on a normalized temperature */
 vec3 blackbody(float t){
   t = clamp(t, 0.22, 2.45);
   vec3 c = mix(vec3(0.20,0.020,0.000), vec3(0.95,0.150,0.012), smoothstep(0.22,0.70,t));
@@ -81,6 +85,16 @@ vec3 blackbody(float t){
   c = mix(c, vec3(1.85,1.63,1.29), smoothstep(1.45,1.88,t));
   c = mix(c, vec3(1.92,2.08,2.45), smoothstep(1.88,2.45,t));
   return c;
+}
+/* science: Planck-locus chromaticity for a physical Kelvin temperature
+   (Tanner-Helland fit, sRGB-normalized) */
+vec3 kelvinRGB(float tK){
+  float t = tK/100.0;
+  float r = t<=66.0 ? 255.0 : 329.698727446*pow(t-60.0, -0.1332047592);
+  float g = t<=66.0 ? 99.4708025861*log(t)-161.1195681661
+                    : 288.1221695283*pow(t-60.0, -0.0755148492);
+  float b = t>=66.0 ? 255.0 : (t<=19.0 ? 0.0 : 138.5177312231*log(t-10.0)-305.0447927307);
+  return clamp(vec3(r,g,b)/255.0, 0.0, 1.0);
 }
 
 /* ---- celestial sphere ---- */
@@ -124,7 +138,8 @@ vec3 skyColor(vec3 d){
 /* ---- accretion disk sample ---- */
 vec4 diskSample(vec3 q, vec3 rayDir){
   float rr = length(q.xz);
-  float inner = smoothstep(DISK_IN*0.84, DISK_IN*1.12, rr);
+  float rin = uDiskIn;
+  float inner = smoothstep(rin*0.84, rin*1.12, rr);
   float outer = 1.0-smoothstep(DISK_OUT*0.52, DISK_OUT*0.98, rr);
   float env = inner*outer;
   if(env < 0.003) return vec4(0.0);
@@ -151,7 +166,6 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   /* relativistic shifts: orbital Doppler + gravitational redshift,
      full static-observer g-factor sqrt[(1-rs/r_em)/(1-rs/r_obs)] */
   float gravObs = inversesqrt(max(1.0-RS/length(uCamPos), 1e-3));
-  float temp = pow((DISK_IN*1.18)/rr, 0.75);
   float beta = clamp(sqrt(0.5/max(rr-RS, 0.55)), 0.0, 0.80);
   vec3 vd = vec3(-q.z, 0.0, q.x)/max(rr, 1e-4);
   float gam = inversesqrt(max(1.0-beta*beta, 0.01));
@@ -159,17 +173,51 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   float grav = sqrt(max(1.0-RS/rr, 0.04))*gravObs;
   float shift = clamp(mix(1.0, dopp*grav, uDoppler), 0.32, 1.95);
 
+  float temp;
+  vec3 bodyCol;
+  if(uScience > 0.5){
+    /* Shakura-Sunyaev thin disk with inner-torque (no-stress) factor:
+       T(r) = T_max * f(x)/f(x_peak), x = r/rin, f = x^{-3/4}(1-x^{-1/2})^{1/4},
+       f peaks at x = (49/36) with f = 0.4879 */
+    float x = max(rr/rin, 1.0001);
+    float fx = pow(x,-0.75)*pow(max(1.0-inversesqrt(x), 0.0), 0.25);
+    float tK = uTNorm*1e7*(fx/0.4879);
+    float ratio = clamp(tK/(uTNorm*1e7), 0.0, 1.0);
+    temp = tK/1e7;
+    bodyCol = kelvinRGB(tK)*pow(ratio, 4.0);       /* bolometric T^4 */
+  } else {
+    temp = pow((rin*1.18)/rr, 0.75);
+    bodyCol = blackbody(temp);
+  }
+
   temp *= shift;
   /* bolometric surface brightness: I_obs = g^4 * I_em (uBeamExp: 4 science,
      3 cinematic tonal choice) */
   float boost = pow(shift, uBeamExp);
 
-  vec3 emis = blackbody(temp)*(dens*(1.0+fil*1.9));
-  float rim = 1.0-smoothstep(1.0, 1.5, rr/DISK_IN);   /* white-hot inner edge */
-  emis += vec3(1.9,2.0,2.3)*(rim*rim*0.85)*inner;
-  emis *= uGain*boost*uTint;
-
+  vec3 emis = bodyCol*(dens*(1.0+fil*1.9));
   float alpha = clamp(dens*1.75*uOpacity, 0.0, 1.0);
+
+  if(uScience > 0.5){
+    /* plunging region: faint infall streaks between horizon and ISCO,
+       advected at free-fall-ish rate with inward radial drift */
+    float band = smoothstep(1.15, 1.7, rr)*(1.0-smoothstep(rin*0.72, rin*0.98, rr));
+    if(band > 0.01){
+      float wff = uFlow*2.4*inversesqrt(rr*rr*rr);
+      float phi2 = phi - wff*uTime*1.6;
+      float rDrift = rr + uTime*0.30*inversesqrt(max(rr-1.0, 0.25));
+      float ns = vnoise(vec3(cos(phi2)*3.0, sin(phi2)*3.0, rDrift*3.5));
+      float densP = band*band*pow(clamp(ns*1.8-0.55, 0.0, 1.0), 1.4);
+      vec3 pc = kelvinRGB(uTNorm*1e7*0.55)*0.40;
+      emis += pc*densP*uGain*boost;
+      alpha = clamp(alpha + densP*0.55*uOpacity, 0.0, 1.0);
+    }
+  } else {
+    float rim = 1.0-smoothstep(1.0, 1.5, rr/rin);    /* white-hot inner edge (cinema) */
+    emis += vec3(1.9,2.0,2.3)*(rim*rim*0.85)*inner;
+  }
+
+  emis *= uGain*boost*mix(uTint, vec3(1.0), uScience);
   return vec4(emis, alpha);
 }
 
@@ -211,7 +259,7 @@ vec3 trace(vec2 ndc){
         float f = p.y/(p.y-np.y);
         vec3 hp = mix(p,np,f);
         float hr = length(hp.xz);
-        if(hr > DISK_IN*0.84 && hr < DISK_OUT){
+        if(hr > uDiskIn*0.84 && hr < DISK_OUT){
           vec4 ds = diskSample(hp, normalize(v));
           col += T*ds.rgb; T *= 1.0-ds.a;
           if(T < 0.004) return col;
@@ -263,7 +311,7 @@ vec3 trace(vec2 ndc){
       float rH = 1.0/uH;
       vec3 q = rH*( cos(phiH)*e1 + sin(phiH)*e2 );
       float hr = length(q.xz);
-      if(hr > DISK_IN*0.84 && hr < DISK_OUT){
+      if(hr > uDiskIn*0.84 && hr < DISK_OUT){
         vec3 er = cos(phiH)*e1 + sin(phiH)*e2;
         vec3 ep = -sin(phiH)*e1 + cos(phiH)*e2;
         vec3 marchDir = normalize((-w/(u*u))*er + (1.0/u)*ep);
@@ -273,6 +321,7 @@ vec3 trace(vec2 ndc){
         if(T < 0.004){ done = true; continue; }
       }
     }
+
 
     u = uN; w = wN; phi = phiN;
   }
