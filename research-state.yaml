@@ -13,7 +13,15 @@ criteria_locked:
   scientific_scale: HUD reports physical units (rs in km, distances in AU, T in K);
     inner disk edge at ISCO 3rs; T(r) follows Shakura-Sunyaev incl. torque factor;
     orbital beta(r) = sqrt(M/(r-2M)) exact; science palette from Planck locus
-validation_target: 10 cold validation rounds minimum (rounds completed: 1)
+validation_target: 10 cold validation rounds minimum (rounds completed: 2)
+round2_results: >
+  5 confirmed findings, ALL FIXED (commit 91cd846): T_max 7x super-Eddington
+  -> honest 8.6e6K derivation; plunging streams were dead code (envelope
+  early-return) -> resurrected; Keplerian uFlow 0.55 -> exact 0.70711; stale
+  (u,w) at disk crossings -> interpolated (uH,wH); frozen adaptive dphi ->
+  already-fixed in-flight. Shadow holds -0.53%. NOTE: 4/6 image reviewers
+  again failed StructuredOutput compliance; round 3 uses single-action
+  reviewer protocol.
 h1h3_result: >
   IMPLEMENTED behind Science toggle (Y) — exact ISCO inner edge (3rs) with
   plunging infall streams; Shakura-Sunyaev T(r)=T_max*f(x)/0.4879 with

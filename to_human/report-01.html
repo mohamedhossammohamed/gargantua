@@ -46,10 +46,10 @@ stellar to Gargantua-class with live physical-unit telemetry.</p>
 <h2>Criteria scoreboard</h2>
 <table>
 <tr><th>criterion</th><th>target</th><th>status</th></tr>
-<tr><td>pixel_perfect</td><td>shadow vs b<sub>crit</sub> = 3√3·M within 0.5%</td><td class="ok">MET — −0.50%, interior 0/255</td></tr>
-<tr><td>scientific_scale</td><td>ISCO exact · S-S temperature · Planck palette · physical HUD</td><td class="ok">IMPLEMENTED (commit c3bab59)</td></tr>
-<tr><td>no_visual_bugs</td><td>2 consecutive clean cold panels (≥6 reviewers)</td><td class="warn">round 2 in flight (round 1 reviewers schema-failed)</td></tr>
-<tr><td>validation rounds</td><td>≥10 cold adversarial rounds</td><td class="warn">2 / 10</td></tr>
+<tr><td>pixel_perfect</td><td>shadow vs b<sub>crit</sub> = 3√3·M within 0.5%</td><td class="ok">MET — −0.53% post-remediation, interior 0/255</td></tr>
+<tr><td>scientific_scale</td><td>ISCO exact · S-S temperature · Planck palette · physical HUD</td><td class="ok">IMPLEMENTED + round-2 hardened (commit 91cd846)</td></tr>
+<tr><td>no_visual_bugs</td><td>2 consecutive clean cold panels (≥6 reviewers)</td><td class="warn">round 3 in flight — single-action reviewer protocol</td></tr>
+<tr><td>validation rounds</td><td>≥10 cold adversarial rounds</td><td class="warn">3 / 10</td></tr>
 </table>
 
 <h2>What the instruments taught</h2>
@@ -66,6 +66,20 @@ stellar to Gargantua-class with live physical-unit telemetry.</p>
 <code>M</code> mass preset · <code>L</code> lensing · <code>D</code> Doppler ·
 <code>B</code> bloom · <code>P</code> palette · <code>Q</code> quality ·
 <code>H</code> cinema · <code>space</code> freeze</p>
+
+<h2>Round 2 — the panel earns its keep</h2>
+<p>The cold physics auditor convicted the science layer's temperature
+normalization: <b>6.3×10⁷ K was ~7× super-Eddington</b> for the Schwarzschild
+thin disk this renderer actually integrates. The honest derivation
+(Ṁ = L<sub>Edd</sub>/ηc², η = 1−√(8/9), r<sub>in</sub> = 6GM/c²) gives
+<b>8.6×10⁶ K</b> at 10 M<sub>☉</sub> — now rendered and displayed. An image
+reviewer caught the plunging-region streams as <b>dead code</b> (the disk
+envelope's early-return executed first); they now render as visible infall
+between shadow and ISCO. Also fixed: Keplerian advection at the exact
+Ω<sub>K</sub> = √(M/r³), and interpolated photon direction at disk crossings
+(the step-start direction was stale mid-step — wrong Doppler sign possible
+near periapsis).</p>
+<img src="../data/shots/S3-graze-science.png" alt="Graze view, science mode — plunging streams live, honest 8.6e6 K telemetry">
 
 <h2>Next</h2>
 <ul>
