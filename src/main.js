@@ -110,10 +110,10 @@ const mComp = makeMaterial(FS_COMPOSITE, {
    State
    ============================================================ */
 const QUALITY = {
-  low:    { steps: 120, dt: 1.50 },
-  medium: { steps: 190, dt: 1.00 },
-  high:   { steps: 290, dt: 0.75 },
-  ultra:  { steps: 400, dt: 0.58 },
+  low:    { steps: 500, dt: 1.30 },
+  medium: { steps: 800, dt: 1.00 },
+  high:   { steps: 1100, dt: 0.85 },
+  ultra:  { steps: 1500, dt: 0.70 },
 };
 const QORDER = ['low','medium','high','ultra'];
 /* discrete internal-resolution tiers — no arbitrary values, no realloc churn */

@@ -38,7 +38,7 @@ const float RS        = 1.0;    /* Schwarzschild radius */
 const float DISK_IN   = 2.6;    /* just outside ISCO (3 rs) for drama */
 const float DISK_OUT  = 11.0;
 const float ESC_R2    = 1936.0; /* r = 44 */
-const int   MAX_STEPS = 420;
+const int   MAX_STEPS = 1500;
 
 /* ---- hashing & noise ---- */
 float hash13(vec3 p){
@@ -173,57 +173,113 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   return vec4(emis, alpha);
 }
 
-/* ---- null-geodesic march ---- */
+/* ---- null-geodesic march: EXACT Schwarzschild photon orbits ----
+   Orbital-plane formulation. Every ray stays in the plane spanned by the
+   camera position and its direction; in (u=1/r, phi) the null geodesic is
+   the exact Binet equation u'' + u = 3Mu^2 (M = rs/2), integrated RK4.
+   The conserved impact parameter b = r0*sin(psi)/sqrt(1-rs/r0) is exact by
+   construction — no pseudo-potential approximation (the old Cartesian
+   scheme's continuum limit overshot b_crit by ~2.9%, gauge-measured). */
+
 vec3 trace(vec2 ndc){
   vec3 rd = normalize(uBasis*vec3(ndc.x*uAspect*uTanF, ndc.y*uTanF, 1.0));
-  vec3 p = uCamPos;
-  vec3 v = rd;
-  vec3 hv = cross(p, v);
-  /* h2 = |p x v|^2 IS the conserved impact parameter b^2 of the affine-
-     parameterized Cartesian scheme (u''+u=3Mu^2 exact). Round-1 audit
-     proposed dividing by (1-rs/d); instrumented refutation (gauge v6,
-     straight-ray leg -0.79%) showed that OVER-bends by ~19% — the local-
-     observer relation b=d*sin(psi)/sqrt(1-rs/d) is already baked into the
-     scheme's gauge. Keep plain h2. */
-  float h2 = dot(hv,hv)*uLensing;
+  vec3 p0 = uCamPos;
+  float r0 = length(p0);
+  vec3 e1 = p0/r0;                                   /* radial out */
+  vec3 e2 = rd - dot(rd,e1)*e1;
+  float vt = length(e2);
+  if(vt < 1e-5){                                     /* dead-center ray */
+    return vec3(0.0);
+  }
+  e2 /= vt;
+  float sinPsi = vt;                                 /* angle from radial */
+  float b = (r0*sinPsi)*inversesqrt(max(1.0-RS/r0, 1e-4))*uLensing;
+  float u  = 1.0/r0;
+  /* inbound: u grows with phi -> w = du/dphi > 0 */
+  float w  = sqrt(max(1.0/(b*b) - u*u + RS*u*u*u, 1e-8));
+  float phi = 0.0;
 
   vec3 col = vec3(0.0);
   float T = 1.0;
+
+  if(uLensing < 0.5){
+    /* straight-ray mode: linear march, no geodesic curvature */
+    vec3 p = p0; vec3 v = rd;
+    for(int i=0;i<300;i++){
+      vec3 np = p + v*0.35;
+      if(p.y*np.y < 0.0){
+        float f = p.y/(p.y-np.y);
+        vec3 hp = mix(p,np,f);
+        float hr = length(hp.xz);
+        if(hr > DISK_IN*0.84 && hr < DISK_OUT){
+          vec4 ds = diskSample(hp, normalize(v));
+          col += T*ds.rgb; T *= 1.0-ds.a;
+          if(T < 0.004) return col;
+        }
+      }
+      p = np;
+      if(dot(p,p) < RS*RS) return col;                 /* horizon silhouette */
+      if(dot(p,p) > ESC_R2) return col + T*skyColor(rd);
+    }
+    return col;
+  }
+
   bool done = false;
+  float M = 0.5*RS;
+  float dphi = 0.09*uDtScale;
+
+  /* Binet RHS */
+  #define BINET(UU) (3.0*M*(UU)*(UU) - (UU))
 
   for(int i=0;i<MAX_STEPS;i++){
     if(i >= uSteps || done) break;
-    float r2 = dot(p,p);
-    if(r2 < RS*RS){ done = true; continue; }               /* captured */
-    if(r2 > ESC_R2 && dot(p,v) > 0.0){                     /* escaped  */
-      col += T*skyColor(normalize(v));
+
+    float yPrev = (1.0/u)*( cos(phi)*e1.y + sin(phi)*e2.y );
+
+    /* RK4 step */
+    float k1u = w,             k1w = BINET(u);
+    float k2u = w +0.5*dphi*k1w, k2w = BINET(u+0.5*dphi*k1u);
+    float k3u = w +0.5*dphi*k2w, k3w = BINET(u+0.5*dphi*k2u);
+    float k4u = w + dphi*k3w,    k4w = BINET(u+dphi*k3u);
+    float uN = u + (dphi/6.0)*(k1u+2.0*k2u+2.0*k3u+k4u);
+    float wN = w + (dphi/6.0)*(k1w+2.0*k2w+2.0*k3w+k4w);
+    float phiN = phi + dphi;
+
+    if(uN < 0.0 || uN > 1.0/RS){ done = true; continue; }   /* captured */
+    if(uN < 1.0/sqrt(ESC_R2) && wN < 0.0){          /* escaped outward */
+      vec3 er = cos(phiN)*e1 + sin(phiN)*e2;
+      vec3 ep = -sin(phiN)*e1 + cos(phiN)*e2;
+      vec3 vdir = normalize((-wN/(uN*uN))*er + (1.0/uN)*ep);
+      col += T*skyColor(vdir);
       done = true; continue;
     }
-    float r = sqrt(r2);
-    float dt = clamp(r*0.14*uDtScale, 0.02, 1.4);
-    if(abs(p.y) < 1.1 && r > DISK_IN*0.8 && r < DISK_OUT*1.05) dt *= 0.55;
 
-    vec3 acc = (-1.5*h2/(r2*r2*r))*p;
-    v += acc*dt;
-    vec3 np = p+v*dt;
-
-    if(p.y*np.y < 0.0){
-      float f = p.y/(p.y-np.y);
-      vec3 hp = mix(p, np, f);
-      float hr = length(hp.xz);
+    /* disk plane crossing between (u,phi) and (uN,phiN) */
+    float yCur = (1.0/uN)*( cos(phiN)*e1.y + sin(phiN)*e2.y );
+    if(yPrev*yCur < 0.0){
+      float f = yPrev/(yPrev-yCur);
+      float uH = mix(u, uN, f);
+      float phiH = mix(phi, phiN, f);
+      float rH = 1.0/uH;
+      vec3 q = rH*( cos(phiH)*e1 + sin(phiH)*e2 );
+      float hr = length(q.xz);
       if(hr > DISK_IN*0.84 && hr < DISK_OUT){
-        vec4 ds = diskSample(hp, normalize(v));
+        vec3 er = cos(phiH)*e1 + sin(phiH)*e2;
+        vec3 ep = -sin(phiH)*e1 + cos(phiH)*e2;
+        vec3 marchDir = normalize((-w/(u*u))*er + (1.0/u)*ep);
+        vec4 ds = diskSample(q, marchDir);
         col += T*ds.rgb;
         T *= 1.0-ds.a;
         if(T < 0.004){ done = true; continue; }
       }
     }
-    p = np;
+
+    u = uN; w = wN; phi = phiN;
   }
+
   if(!done && T > 0.01){
-    /* step budget exhausted near the photon sphere — classify by radial
-       motion with a dead-band so tangential rays can't flicker frame-to-frame */
-    col += dot(p,v) > 0.02 ? T*skyColor(normalize(v)) : vec3(0.0);
+    /* budget exhausted in the winding zone — classify by radial sense */
+    col += w < 0.0 ? T*skyColor(normalize(cos(phi)*e1 + sin(phi)*e2)) : vec3(0.0);
   }
   return col;
 }

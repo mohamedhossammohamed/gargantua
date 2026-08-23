@@ -18,7 +18,7 @@ const browser = await puppeteer.launch({
 });
 const page = await browser.newPage();
 page.setDefaultTimeout(15000);
-await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
+await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 2 });   /* 2560x1600: halves threshold-placement error */
 setTimeout(() => { console.error('GAUGE GLOBAL TIMEOUT'); process.exit(3); }, 170000).unref();
 
 async function measure(presses, label, lensOff){
@@ -54,25 +54,28 @@ async function measure(presses, label, lensOff){
         return lum[yi*w+xi]*(1-fx)*(1-fy)+lum[yi*w+xi+1]*fx*(1-fy)
              + lum[(yi+1)*w+xi]*(1-fx)*fy+lum[(yi+1)*w+xi+1]*fx*fy;
       };
-      const N = 24, hits = [];
+      const N = 48, hits = [];
       let interiorMax = 0;
       for(let k = 0; k < N; k++){
-        const ang = (60 + (k/(N-1))*60) * Math.PI/180;
+        const ang = (55 + (k/(N-1))*70) * Math.PI/180;
         const dxr = Math.cos(ang), dyr = Math.sin(ang);
         const samp = r => L(cx + dxr*r, cy + dyr*r);
         const THR = 12;   /* nograin channel: true-black floor ~2-3 levels */
         let edge = -1;
-        for(let r = 4; r <= 200; r += 0.5){
+        for(let r = 4; r <= 300; r += 0.25){
           const v = samp(r);
           if(v < 0) break;
-          if(r < 90) interiorMax = Math.max(interiorMax, v);
+          if(r < 160) interiorMax = Math.max(interiorMax, v);
           if(v >= THR){ edge = r; break; }
         }
         if(edge < 0) continue;
-        /* subpixel: crossing between edge-0.5 and edge */
-        const a = samp(edge-0.5), b = samp(edge);
-        const frac = (b-a) > 0 ? Math.min(1, Math.max(0, (THR-a)/(b-a))) : 0;
-        hits.push(edge - 0.5 + frac);
+        /* subpixel at 0.1px: refine crossing between edge-0.25 and edge */
+        let lo = edge-0.25, hi2 = edge;
+        for(let it = 0; it < 3; it++){
+          const mid = (lo+hi2)/2;
+          if(samp(mid) >= THR) hi2 = mid; else lo = mid;
+        }
+        hits.push((lo+hi2)/2);
       }
       hits.sort((a,b)=>a-b);
       resolve({ w, h, camDist: window.__gargantua?.camDist ?? 0,
