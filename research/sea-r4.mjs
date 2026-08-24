@@ -83,12 +83,19 @@ const all = [...reviewTasks, ...judgeTasks, ...physTasks]
    classifier flap killed 11/18 and 12/18 of the previous launches */
 const spawn = async (t) => {
   const opts = {
-    label: `r4:${t.shot||('set'+t.set)||t.id}`, phase: t.kind==='review'?'Defects':(t.kind==='judge'?'Judges':'Physics'),
+    label: `r4:${t.shot || (t.set ? 'set'+t.set : t.id)}`,
+    phase: t.kind==='review'?'Defects':(t.kind==='judge'?'Judges':'Physics'),
     schema: t.kind==='judge' ? JUDGE_SCHEMA : (t.kind==='diag' ? DIAG_SCHEMA : FIND_SCHEMA),
   }
   return (await agent(t.prompt, opts)) ?? (await agent(t.prompt, opts))
 }
-const results = await pipeline(all, spawn)
+/* waves of 4: the OpenRouter gateway 429s under 10-wide fan-out (round 8
+   lost 36/36 agents to rate limits) */
+const chunk = (a, n) => Array.from({length: Math.ceil(a.length/n)}, (_,i) => a.slice(i*n, i*n+n))
+const results = []
+for(const wave of chunk(all, 4)){
+  results.push(...await pipeline(wave, spawn))
+}
 
 const defects = [], judges = [], diags = []
 all.forEach((t,i)=>{ const r = results[i]; if(!r) return
