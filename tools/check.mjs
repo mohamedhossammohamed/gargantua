@@ -12,6 +12,9 @@ const ok = m => console.log('ok:', m);
 const shadersSrc = fs.readFileSync(root + 'src/shaders.js', 'utf8');
 const shaders = [...shadersSrc.matchAll(/export const \w+ = `([\s\S]*?)`;$/gm)].map(m => m[1]);
 if(shaders.length !== 8) fail(`expected 8 shaders, found ${shaders.length}`);
+/* the shader regex survives a stray backtick (non-greedy match resumes at the
+   real closer) but esbuild does not — count them: 8 literals x 2 */
+if((shadersSrc.match(/`/g) || []).length !== 16) fail('stray backtick in shaders.js — a GLSL comment ate the template literal');
 const declared = new Set();
 if(/`#version/.test(shadersSrc)) fail('shader string embeds #version (three injects its own)');
 for(const src of shaders){

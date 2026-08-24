@@ -232,7 +232,7 @@ vec4 diskSample(vec3 q, vec3 rayDir){
     float tK = uTNorm*1e7*(fx/0.4879);
     /* the shift CONSUMED: T_obs = g*T_em — bolometric g^4 on an unshifted
        spectrum was internally inconsistent (round-5 emission audit: the old
-       `temp *= shift` was a dead store; approaching side never whitened) */
+       temp *= shift store was dead; approaching side never whitened) */
     float tObs = tK*shift;
     float ratio = clamp(tObs/(uTNorm*1e7), 0.0, 1.0);
     temp = tObs/1e7;
