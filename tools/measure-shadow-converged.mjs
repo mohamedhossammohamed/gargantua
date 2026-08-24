@@ -1,11 +1,10 @@
 import puppeteer from 'puppeteer-core';
 
-/* H6 gauge v7 — first-light from the black interior.
-   Bloom OFF guarantees a truly black moat; walk OUTWARD from screen center
-   along upper-sector rays; the FIRST super-threshold sample is the shadow
-   edge (inner wall of whatever structure bounds it — photon ring / far-side
-   arc — both sit immediately outside the capture boundary). Subpixel lerp.
-   Also reports interior purity (max lum inside 0.8R). */
+/* H6 gauge v8 (converged) — identical metrology to measure-shadow.mjs v7,
+   but waits for the temporal accumulator to converge and the camera to
+   settle before sampling. The v7 400ms post-pause window sampled an EMA
+   that lagged the still-easing camera (image averaged frames from larger
+   distance -> shadow biased small). Here: 1600ms settle + convergence. */
 
 const exe = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const T = 0.6121;
@@ -18,8 +17,8 @@ const browser = await puppeteer.launch({
 });
 const page = await browser.newPage();
 page.setDefaultTimeout(15000);
-await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 2 });   /* 2560x1600: halves threshold-placement error */
-setTimeout(() => { console.error('GAUGE GLOBAL TIMEOUT'); process.exit(3); }, 170000).unref();
+await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 2 });
+setTimeout(() => { console.error('GAUGE GLOBAL TIMEOUT'); process.exit(3); }, 190000).unref();
 
 async function measure(presses, label, lensOff){
   await page.goto('http://127.0.0.1:8811/index.html?metro=1', { waitUntil: 'load' });
@@ -30,7 +29,7 @@ async function measure(presses, label, lensOff){
   for(let i = 0; i < presses; i++){ await page.keyboard.press('q'); await new Promise(r => setTimeout(r, 100)); }
   await new Promise(r => setTimeout(r, 700));
   await page.keyboard.press(' ');
-  await new Promise(r => setTimeout(r, 400));
+  await new Promise(r => setTimeout(r, 1600));   /* camera settle + EMA convergence */
   const res = await page.evaluate(lensOff => new Promise(resolve => {
     const gl = document.getElementById('view').getContext('webgl2');
     let done = false;
@@ -60,7 +59,7 @@ async function measure(presses, label, lensOff){
         const ang = (55 + (k/(N-1))*70) * Math.PI/180;
         const dxr = Math.cos(ang), dyr = Math.sin(ang);
         const samp = r => L(cx + dxr*r, cy + dyr*r);
-        const THR = 12;   /* nograin channel: true-black floor ~2-3 levels */
+        const THR = 12;
         let edge = -1;
         for(let r = 4; r <= 300; r += 0.25){
           const v = samp(r);
@@ -69,11 +68,7 @@ async function measure(presses, label, lensOff){
           if(v >= THR){ edge = r; break; }
         }
         if(edge < 0) continue;
-        /* 50%-of-plateau crossing: the accumulated edge is a box-filtered
-           ramp; an absolute near-floor threshold lands ~0.4 texel inside the
-           true edge once TAA is on (round-4). Plateau = median ring brightness
-           just outside, then bisect the half-max crossing — unbiased for both
-           the old aliased step and the new ramp. */
+        /* 50%-of-plateau crossing — see measure-shadow.mjs round-4 note */
         const ps = [];
         for(let rr2 = edge+1.5; rr2 <= edge+3.5; rr2 += 0.5){
           const v = samp(rr2); if(v >= 0) ps.push(v);

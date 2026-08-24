@@ -13,15 +13,26 @@ criteria_locked:
   scientific_scale: HUD reports physical units (rs in km, distances in AU, T in K);
     inner disk edge at ISCO 3rs; T(r) follows Shakura-Sunyaev incl. torque factor;
     orbital beta(r) = sqrt(M/(r-2M)) exact; science palette from Planck locus
-validation_target: 10 cold validation rounds minimum (rounds completed: 2)
-round2_results: >
-  5 confirmed findings, ALL FIXED (commit 91cd846): T_max 7x super-Eddington
-  -> honest 8.6e6K derivation; plunging streams were dead code (envelope
-  early-return) -> resurrected; Keplerian uFlow 0.55 -> exact 0.70711; stale
-  (u,w) at disk crossings -> interpolated (uH,wH); frozen adaptive dphi ->
-  already-fixed in-flight. Shadow holds -0.53%. NOTE: 4/6 image reviewers
-  again failed StructuredOutput compliance; round 3 uses single-action
-  reviewer protocol.
+validation_target: 10 cold validation rounds minimum (rounds completed: 3, round 4 = 18-agent sea in flight)
+round3_results: >
+  7/7 reviewers returned (single-action protocol works). 10 confirmed findings
+  collapsed to ONE defect class: high-order caustic images bead at 1 ray/pixel
+  (dotted photon ring, dashed lower arcs) + rainbow star specks from per-channel
+  scene CA. FIXED (commit 551edf5): photon-sphere-side exhaustion classification
+  (w-sign misclassified escaping rays as black), grazing-aware noise filter,
+  secant-refined crossings, CA exiled to streak layer, 8-phase subpixel jitter
+  + EMA temporal accumulation (converges static frames to supersample),
+  plunge-stream noise rescale. ALSO: uFlow 0.55 overwrite regression found in
+  updateSceneUniforms — round-2 Keplerian fix was silently inert; now truly
+  0.70711. Shadow gauge: -0.47% pre-TAA -> -0.57% post-TAA (outside band,
+  diagnostician assigned in sea). Spectacle jury + 2 GR auditors added to
+  round-4 panel per user directive ("sea of sub agents", goal: spectacular
+  AND physically accurate).
+pending_directives:
+  - github_pages: >
+      User directive (via /subtask, fork died on API error): after the loop
+      finishes, push the HTML as GitHub Pages with a simple readme. Owner:
+      this loop's endgame.
 h1h3_result: >
   IMPLEMENTED behind Science toggle (Y) — exact ISCO inner edge (3rs) with
   plunging infall streams; Shakura-Sunyaev T(r)=T_max*f(x)/0.4879 with

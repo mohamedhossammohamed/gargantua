@@ -287,6 +287,8 @@ watchDPR();
 const kioskHrs = parseFloat(new URLSearchParams(location.search).get('kiosk') || '0');
 if(kioskHrs > 0) setTimeout(() => location.reload(), kioskHrs*3600e3);
 const URL_NOGRAIN = new URLSearchParams(location.search).has('nograin');   /* metrology flag */
+const URL_METRO = new URLSearchParams(location.search).has('metro');       /* raw-tracer metrology: no jitter, no accumulation, no grain —
+   the shadow criterion measures the capture boundary physics, not the AA filter */
 
 /* ============================================================
    Input
@@ -588,10 +590,15 @@ function render(now){
   /* --- scene pass with temporal accumulation: subpixel jitter + EMA blend
      converges static frames to a true supersample — the high-order photon-ring
      images are exponentially thin and bead at one ray per pixel (round-3) --- */
-  const JP = [[-0.25,-0.25],[0.25,-0.25],[-0.25,0.25],[0.25,0.25],
-              [-0.625,0.125],[0.125,-0.625],[0.375,0.625],[-0.125,-0.375]];
-  const jf = JP[frameCount & 7];
-  mScene.uniforms.uJitter.value.set(jf[0]/rtScene.width, jf[1]/rtScene.height);
+  if(URL_METRO){
+    mScene.uniforms.uJitter.value.set(0, 0);
+  } else {
+    const JP = [];
+    for(let iy = 0; iy < 4; iy++) for(let ix = 0; ix < 4; ix++)
+      JP.push([-0.75+ix*0.5, -0.75+iy*0.5]);   /* 16-tap stratified, ±0.375 texel */
+    const jf = JP[frameCount & 15];
+    mScene.uniforms.uJitter.value.set(jf[0]/rtScene.width, jf[1]/rtScene.height);
+  }
   drawPass(mScene, rtScene);
 
   const camMoving = Math.abs(cam.az-cam.tAz)+Math.abs(cam.el-cam.tEl)+Math.abs(cam.dist-cam.tDist) > 1e-4;
@@ -599,7 +606,7 @@ function render(now){
                   + Math.abs(palCur.streakStr-palTgt.streakStr)+Math.abs(palCur.doppler-palTgt.doppler) > 2e-3;
   mBlend.uniforms.uCur.value = rtScene.texture;
   mBlend.uniforms.uPrev.value = accCur.texture;
-  mBlend.uniforms.uMix.value = accReset ? 1.0 : ((!state.paused || camMoving || palMoving) ? 0.5 : 0.12);
+  mBlend.uniforms.uMix.value = (accReset || URL_METRO) ? 1.0 : ((!state.paused || camMoving || palMoving) ? 0.5 : 0.12);
   drawPass(mBlend, accNext);
   const accT = accCur; accCur = accNext; accNext = accT;
   accReset = false;
@@ -647,7 +654,7 @@ function render(now){
   uc.uExposure.value = 1.05;
   uc.uSaturation.value = palCur.sat;
   uc.uHasGlow.value = state.bloom ? 1 : 0;
-  uc.uGrainAmt.value = (URL_NOGRAIN || reducedMotion) ? 0.0 : 0.030;
+  uc.uGrainAmt.value = (URL_NOGRAIN || URL_METRO || reducedMotion) ? 0.0 : 0.030;
   uc.uOutTexel.value.copy(bufSize);
   drawPass(mComp, null);
 
