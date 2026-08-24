@@ -92,6 +92,7 @@ const mScene = makeMaterial(FS_SCENE, {
   uGain:{value:1.18}, uOpacity:{value:0.85},
   uFlow:{value:0.70711}, uTwinkle:{value:0.6}, uTint:{value:new THREE.Vector3(1.06,0.97,0.88)},  /* exact Omega_K = sqrt(M/r^3), M=1/2 */
   uJitter:{value:new THREE.Vector2(0,0)},
+  uStars:{value:1},
 });
 const mBlend = makeMaterial(FS_BLEND, {
   uCur:{value:null}, uPrev:{value:null}, uMix:{value:1.0},
@@ -108,7 +109,7 @@ const mComp = makeMaterial(FS_COMPOSITE, {
   uB3:{value:null}, uB4:{value:null}, uStreak:{value:null},
   uTime:{value:0}, uBloomStr:{value:0.95}, uStreakStr:{value:0.34},
   uExposure:{value:1.05}, uSaturation:{value:1.14}, uHasGlow:{value:1},
-  uGrainAmt:{value:0.03}, uOutTexel:{value:new THREE.Vector2(1,1)},
+  uGrainAmt:{value:0.03}, uPinch:{value:0.045}, uOutTexel:{value:new THREE.Vector2(1,1)},
 });
 
 /* ============================================================
@@ -289,8 +290,10 @@ watchDPR();
 const kioskHrs = parseFloat(new URLSearchParams(location.search).get('kiosk') || '0');
 if(kioskHrs > 0) setTimeout(() => location.reload(), kioskHrs*3600e3);
 const URL_NOGRAIN = new URLSearchParams(location.search).has('nograin');   /* metrology flag */
-const URL_METRO = new URLSearchParams(location.search).has('metro');       /* raw-tracer metrology: no jitter, no accumulation, no grain —
-   the shadow criterion measures the capture boundary physics, not the AA filter */
+const URL_NOSTARS = new URLSearchParams(location.search).has('nostars');   /* lensed-star vs renderer bead disambiguation */
+const URL_METRO = new URLSearchParams(location.search).has('metro');       /* raw-tracer metrology: no jitter, no accumulation, no grain,
+   no pincushion — the shadow criterion measures the capture boundary physics,
+   not the AA filter or the presentation warp */
 
 /* ============================================================
    Input
@@ -400,7 +403,7 @@ function setScience(v){
 }
 function cycleMass(){
   state.massIdx = (state.massIdx+1)%MASSES.length;
-  document.getElementById('btnMass').textContent = 'M '+MASSES[state.massIdx].label;
+  document.getElementById('btnMass').textContent = MASSES[state.massIdx].label;
   updateScienceHud();
 }
 const tRs = document.getElementById('tRs'), tCam = document.getElementById('tCam'),
@@ -536,7 +539,7 @@ function updateSceneUniforms(){
   u.uTime.value = simTime;
   u.uCamPos.value.copy(camera.position);
   window.__gargantua = { camDist: Math.hypot(camera.position.x, camera.position.y, camera.position.z),
-                         steps: q.steps, tier: state.qKey };
+                         steps: q.steps, tier: state.qKey, bloom: state.bloom };
   /* basis columns: right, up, forward */
   camera.getWorldDirection(_fwd);
   _right.crossVectors(_fwd, _worldUp).normalize();
@@ -560,6 +563,7 @@ function updateSceneUniforms(){
   u.uOpacity.value = 0.85;
   u.uFlow.value = 0.70711;   /* exact Keplerian Omega_K = sqrt(M/r^3), M = 1/2
     (round-2 fix was silently overwritten here each frame until round-3 caught it) */
+  u.uStars.value = URL_NOSTARS ? 0.0 : 1.0;
   u.uTwinkle.value = reducedMotion ? 0.15 : 0.6;
   u.uTint.value.set(palCur.tint[0], palCur.tint[1], palCur.tint[2]);
 }
@@ -665,6 +669,7 @@ function render(now){
   uc.uSaturation.value = palCur.sat;
   uc.uHasGlow.value = state.bloom ? 1 : 0;
   uc.uGrainAmt.value = (URL_NOGRAIN || URL_METRO || reducedMotion) ? 0.0 : 0.030;
+  uc.uPinch.value = URL_METRO ? 0.0 : 0.045;   /* metro measures scene geometry natively */
   uc.uOutTexel.value.copy(bufSize);
   drawPass(mComp, null);
 

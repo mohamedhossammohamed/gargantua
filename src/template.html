@@ -60,6 +60,7 @@ body {
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--faint);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.85);   /* legible over bright disk bloom */
 }
 
 /* brand — top left */
@@ -83,7 +84,7 @@ body {
   user-select: none;
 }
 #telemetry b { color: var(--ink); font-weight: 500; }
-#telemetry .k { display: inline-block; min-width: 12ch; padding-right: 1.8em; color: var(--faint); letter-spacing: 0.14em; text-transform: uppercase; font-size: 9px; }
+#telemetry .k { display: inline-block; min-width: 12ch; padding-right: 1.8em; color: var(--faint); letter-spacing: 0.14em; text-transform: uppercase; font-size: 9px; text-shadow: 0 1px 3px rgba(0,0,0,0.85); }
 /* padding-right in em: ch measures the glyph, not the tracking — "integration"
    at 0.14em tracking overflows a bare 12ch box by ~1.5ch (round-4 audit) */
 #telemetry .live { color: var(--amber); }
@@ -232,7 +233,7 @@ kbd {
       <button class="chip tog on" id="btnDopp">Doppler</button>
       <button class="chip tog on" id="btnBloom">Bloom</button>
       <button class="chip tog" id="btnSci" aria-pressed="false">Science</button>
-      <button class="chip" id="btnMass">M STELLAR 10 M</button>
+      <button class="chip" id="btnMass">STELLAR 10 M</button>
     </div>
     <div class="cgroup"><span class="label">Palette</span>
       <button class="chip pal on" data-pal="ember">Ember</button>

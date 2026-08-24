@@ -37,11 +37,15 @@ uniform float uFlow;
 uniform float uTwinkle;
 uniform vec3  uTint;
 uniform vec2  uJitter;     /* subpixel jitter for temporal accumulation */
+uniform float uStars;      /* 0/1 star toggle (?nostars) — disambiguates
+   lensed-star beads from renderer beads on the photon ring */
 
 const float RS        = 1.0;    /* Schwarzschild radius */
 const float DISK_IN   = 2.6;    /* just outside ISCO (3 rs) for drama */
 const float DISK_OUT  = 11.0;
-const float ESC_R2    = 1936.0; /* r = 44 */
+const float ESC_R2    = 4225.0; /* r = 65 — a low escape sphere leaves a
+   2M/r under-deflection tail (~1.3° at r=44) on every escaped ray's sky
+   direction (round-4 GR audit); r=65 cuts it to ~0.9° at modest step cost */
 const int   MAX_STEPS = 1500;
 
 /* ---- hashing & noise ---- */
@@ -95,7 +99,10 @@ vec3 kelvinRGB(float tK){
   float g = t<=66.0 ? 99.4708025861*log(t)-161.1195681661
                     : 288.1221695283*pow(t-60.0, -0.0755148492);
   float b = t>=66.0 ? 255.0 : (t<=19.0 ? 0.0 : 138.5177312231*log(t-10.0)-305.0447927307);
-  return clamp(vec3(r,g,b)/255.0, 0.0, 1.0);
+  /* Tanner-Helland is display-referred sRGB; the scene is linear and the
+     composite re-encodes — skipping this decode double-gammas the
+     chromaticity off the Planck locus (round-4 emission audit) */
+  return pow(clamp(vec3(r,g,b)/255.0, 0.0, 1.0), vec3(2.2));
 }
 
 /* ---- celestial sphere ---- */
@@ -130,9 +137,9 @@ vec3 skyColor(vec3 d){
   col += mwc*mw*0.50;
   float cg = pow(max(dot(d,CORE),0.0),30.0);
   col += vec3(1.0,0.80,0.55)*cg*band*0.85;
-  col += starLayer(d, 70.0, 0.9915, 1.15);
-  col += starLayer(d,150.0, 0.9880, 0.75);
-  col += starLayer(d,340.0, 0.9855, 0.42);
+  col += uStars*(starLayer(d, 70.0, 0.9915, 1.15)
+               + starLayer(d,150.0, 0.9880, 0.75)
+               + starLayer(d,340.0, 0.9855, 0.42));
   return col;
 }
 
@@ -151,7 +158,11 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   float gam = inversesqrt(max(1.0-beta*beta, 0.01));
   float dopp = 1.0/(gam*(1.0-beta*dot(vd, -rayDir)));
   float grav = sqrt(max(1.0-RS/rr, 0.04))*gravObs;
-  float shift = clamp(mix(1.0, dopp*grav, uDoppler), 0.32, 1.95);
+  /* science mode keeps the physical deep redshift — the 0.32 tone floor was
+     brightening the receding plunge band ~8x bolometric (round-4 emission
+     audit); cinema keeps the guard to avoid dead-black bands */
+  float gFloor = uScience > 0.5 ? 0.05 : 0.32;
+  float shift = clamp(mix(1.0, dopp*grav, uDoppler), gFloor, 1.95);
   /* I_obs = g^uBeamExp * I_em (4 = bolometric science, 3 = cinematic tone) */
   float boost = pow(shift, uBeamExp);
 
@@ -200,7 +211,9 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   dens *= env;
   if(dens < 0.004) return vec4(emis, alpha);
 
-  float fil = smoothstep(0.52, 0.88, n2)*mix(0.35, 1.0, graze);
+  /* the fil fade is a graded anti-sparkle term, not mean-preserving —
+     science mode runs it near-photometric (round-4 emission audit) */
+  float fil = smoothstep(0.52, 0.88, n2)*mix(uScience > 0.5 ? 0.8 : 0.35, 1.0, graze);
 
   float temp;
   vec3 bodyCol;
@@ -254,8 +267,11 @@ vec3 trace(vec2 ndc){
   float sinPsi = vt;                                 /* angle from radial */
   float b = (r0*sinPsi)*inversesqrt(max(1.0-RS/r0, 1e-4))*uLensing;
   float u  = 1.0/r0;
-  /* inbound: u grows with phi -> w = du/dphi > 0 */
-  float w  = sqrt(max(1.0/(b*b) - u*u + RS*u*u*u, 1e-8));
+  /* w = du/dphi is POSITIVE only when the ray starts inward. Hardcoding +w
+     integrated the phi-MIRRORED orbit for any outward-starting ray — phantom
+     dive, phantom disk crossings (round-4 GR audit; dormant in centered
+     framings, live the moment the hole leaves frame-center). */
+  float w  = (dot(rd,e1) < 0.0 ? 1.0 : -1.0)*sqrt(max(1.0/(b*b) - u*u + RS*u*u*u, 1e-8));
   float phi = 0.0;
 
   vec3 col = vec3(0.0);
@@ -361,7 +377,11 @@ vec3 trace(vec2 ndc){
     if(!cap){
       vec3 er = cos(phi)*e1 + sin(phi)*e2;
       vec3 ep = -sin(phi)*e1 + cos(phi)*e2;
-      col += T*skyColor(normalize((-w/(u*u))*er + (1.0/u)*ep));
+      /* w>0 with u<uPh: the ray would turn after budget death — the radial
+         term points INTO the hole; sample the sky along the pure tangent
+         instead (round-4 GR audit) */
+      vec3 vd = w < 0.0 ? normalize((-w/(u*u))*er + (1.0/u)*ep) : ep;
+      col += T*skyColor(vd);
     }
   }
   return col;
@@ -486,6 +506,8 @@ uniform float uExposure;
 uniform float uSaturation;
 uniform float uHasGlow;
 uniform float uGrainAmt;
+uniform float uPinch;      /* pincushion amount — 0 in ?metro so the gauge
+   measures scene geometry natively (round-4 diagnostician) */
 uniform vec2  uOutTexel;
 
 vec3 aces(vec3 x){
@@ -500,7 +522,7 @@ void main(){
   /* mild pincushion + radial chromatic aberration */
   vec2 cc = vUv-0.5;
   float r2 = dot(cc,cc);
-  vec2 uv = 0.5+cc*(1.0-0.045*r2);
+  vec2 uv = 0.5+cc*(1.0-uPinch*r2);
   float ca = 0.0125*r2;
   /* scene stays RGB-aligned: per-channel scene offsets split point stars into
      rainbow specks (round-3 audit). The chromatic fringe lives only on the

@@ -26,6 +26,11 @@ async function measure(presses, label, lensOff){
   await new Promise(r => setTimeout(r, 600));
   await page.mouse.wheel({ deltaY: 10 });
   await page.keyboard.press('b');
+  await new Promise(r => setTimeout(r, 150));
+  if(await page.evaluate(() => window.__gargantua?.bloom) !== false){
+    console.error('GAUGE: bloom failed to disable — aborting (a flooded moat fabricates interior glow)');
+    process.exit(4);
+  }
   if(lensOff) await page.keyboard.press('l');
   for(let i = 0; i < presses; i++){ await page.keyboard.press('q'); await new Promise(r => setTimeout(r, 100)); }
   await new Promise(r => setTimeout(r, 700));
@@ -82,7 +87,12 @@ async function measure(presses, label, lensOff){
         const B = ps.length ? ps[ps.length>>1] : 0;
         const THR2 = Math.max(THR, 0.5*B);
         let lo = Math.max(4, edge-2), hi2 = edge;
-        for(let it = 0; it < 5; it++){
+        /* the invariant samp(hi2)>=THR2 fails at the raw edge when the plateau
+           is bright — extend forward or the bisection silently degenerates to
+           the absolute-THR estimator (round-4 diagnostician, numerically
+           verified: hard step -0.264 -> -0.014 texel) */
+        while(samp(hi2) < THR2 && hi2 < edge+6) hi2 += 0.25;
+        for(let it = 0; it < 8; it++){
           const mid = (lo+hi2)/2;
           if(samp(mid) >= THR2) hi2 = mid; else lo = mid;
         }
