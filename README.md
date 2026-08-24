@@ -4,13 +4,13 @@ A general-relativistic black-hole renderer in **one HTML file**. No build step t
 
 **▶ Play live: [mohamedhossammohamed.github.io/gargantua](https://mohamedhossammohamed.github.io/gargantua/)**
 
-![Gargantua — graze view, science mode](data/shots/S3-graze-science.png)
+![Gargantua — graze view, science mode](data/shots/S3-graze-science.jpg)
 
 ## What you are looking at
 
 Every pixel is a photon traced backwards through exact Schwarzschild geometry — the Binet equation `u'' + u = 3Mu²` integrated RK4 per ray per frame, not a lens-flare shader pretending. The disk wraps over and under the shadow because that is what light actually does near a black hole. The bright knots strung along the photon ring are not noise: turn the starfield off (`?nostars`) and they vanish — each one is a background star smeared into view by the ring's extreme magnification.
 
-![Gargantua — orbit view, cinema grade](data/shots/S1-orbit-cinema.png)
+![Gargantua — orbit view, cinema grade](data/shots/S1-orbit-cinema.jpg)
 
 ## The numbers are honest — and measured, not claimed
 
