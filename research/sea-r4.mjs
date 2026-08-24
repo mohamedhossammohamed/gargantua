@@ -44,7 +44,8 @@ const DIAG_SCHEMA = {
 
 const REVIEW = `STRICT PROTOCOL — follow exactly, in order:
 STEP 1: Use the Read tool on exactly the image path listed below. Do nothing else — no code reading, no shell, no analysis prose.
-STEP 2: Immediately call StructuredOutput. clean=true if the image shows no genuine visual defect; otherwise list findings (max 4) with shot filename, severity, where-in-frame, description. Visual defects = banding, dotted/dashed/beaded arcs, seams, ghosting, blur smearing, double edges, HUD glitches, geometry contradicting gravitational lensing. Film grain, palette and bloom choices are NOT defects.
+STEP 2: Immediately call StructuredOutput. clean=true if the image shows no genuine visual defect; otherwise list findings (max 4) with shot filename, severity, where-in-frame, description. Visual defects = banding, seams, ghosting, blur smearing, double edges, HUD glitches, geometry contradicting gravitational lensing.
+NOT defects (established by controlled A/B evidence, do not convict): film grain; palette and bloom choices; bright knots or speckle along the photon ring — an identical frame with the starfield disabled (data/shots/14-closeup-nostars.png vs 13-closeup-stars.png) proves these are LENSED STAR IMAGES, i.e. correct physics; faint concentric arcs in the dark moat near the shadow are higher-order lensed disk images, also correct physics.
 Do NOT write any prose response. The StructuredOutput call IS your entire answer.`
 
 const SHOTS = ['S1-orbit-cinema.png','S2-orbit-science.png','S3-graze-science.png','S4-science-gargantua.png',

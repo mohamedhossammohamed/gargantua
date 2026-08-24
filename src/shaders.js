@@ -156,7 +156,13 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   float beta = clamp(sqrt(0.5/max(rr-RS, 0.55)), 0.0, 0.80);
   vec3 vd = vec3(-q.z, 0.0, q.x)/max(rr, 1e-4);
   float gam = inversesqrt(max(1.0-beta*beta, 0.01));
-  float dopp = 1.0/(gam*(1.0-beta*dot(vd, -rayDir)));
+  /* the angle is measured in the emitter's LOCAL static frame: the radial
+     component of the photon direction shrinks by sqrt(1-rs/r) under the
+     lapse, so the coordinate dot product under-beams steeply-radial rays
+     (round-5 emission audit). mu = tangential alignment. */
+  float mu = dot(vd, -rayDir);
+  float cosLoc = mu/sqrt(max(mu*mu + (1.0-mu*mu)*(1.0-RS/rr), 1e-3));
+  float dopp = 1.0/(gam*(1.0-beta*cosLoc));
   float grav = sqrt(max(1.0-RS/rr, 0.04))*gravObs;
   /* science mode keeps the physical deep redshift — the 0.32 tone floor was
      brightening the receding plunge band ~8x bolometric (round-4 emission
@@ -224,15 +230,17 @@ vec4 diskSample(vec3 q, vec3 rayDir){
     float x = max(rr/rin, 1.0001);
     float fx = pow(x,-0.75)*pow(max(1.0-inversesqrt(x), 0.0), 0.25);
     float tK = uTNorm*1e7*(fx/0.4879);
-    float ratio = clamp(tK/(uTNorm*1e7), 0.0, 1.0);
-    temp = tK/1e7;
-    bodyCol = kelvinRGB(tK)*pow(ratio, 4.0);       /* bolometric T^4 */
+    /* the shift CONSUMED: T_obs = g*T_em — bolometric g^4 on an unshifted
+       spectrum was internally inconsistent (round-5 emission audit: the old
+       `temp *= shift` was a dead store; approaching side never whitened) */
+    float tObs = tK*shift;
+    float ratio = clamp(tObs/(uTNorm*1e7), 0.0, 1.0);
+    temp = tObs/1e7;
+    bodyCol = kelvinRGB(tObs)*pow(ratio, 4.0);     /* bolometric T^4 */
   } else {
-    temp = pow((rin*1.18)/rr, 0.75);
+    temp = pow((rin*1.18)/rr, 0.75)*shift;
     bodyCol = blackbody(temp);
   }
-
-  temp *= shift;
 
   emis += bodyCol*(dens*(1.0+fil*1.9));
   if(uScience < 0.5){
@@ -261,7 +269,9 @@ vec3 trace(vec2 ndc){
   vec3 e2 = rd - dot(rd,e1)*e1;
   float vt = length(e2);
   if(vt < 1e-5){                                     /* dead-center ray */
-    return vec3(0.0);
+    /* radial family: inward hits the horizon (black); outward samples the sky
+       (round-5 GR audit — the old return was direction-blind) */
+    return dot(rd,e1) < 0.0 ? vec3(0.0) : skyColor(rd);
   }
   e2 /= vt;
   float sinPsi = vt;                                 /* angle from radial */
@@ -326,9 +336,17 @@ vec3 trace(vec2 ndc){
 
     if(uN < 0.0 || uN > 1.0/RS){ done = true; continue; }   /* captured */
     if(uN < 1.0/sqrt(ESC_R2) && wN < 0.0){          /* escaped outward */
-      vec3 er = cos(phiN)*e1 + sin(phiN)*e2;
-      vec3 ep = -sin(phiN)*e1 + cos(phiN)*e2;
-      vec3 vdir = normalize((-wN/(uN*uN))*er + (1.0/uN)*ep);
+      /* interpolate the sphere crossing: far-field rays move nearly radially,
+         so the raw step endpoint overshoots the sphere by tens of rs and
+         quantizes the terminal sky direction into concentric rings
+         (round-5 regression after ESC r 44->65) */
+      float uEsc = 1.0/sqrt(ESC_R2);
+      float f = clamp((u - uEsc)/max(u - uN, 1e-6), 0.0, 1.0);
+      float phiE = mix(phi, phiN, f);
+      float wE = mix(w, wN, f);
+      vec3 er = cos(phiE)*e1 + sin(phiE)*e2;
+      vec3 ep = -sin(phiE)*e1 + cos(phiE)*e2;
+      vec3 vdir = normalize((-wE/(uEsc*uEsc))*er + (1.0/uEsc)*ep);
       col += T*skyColor(vdir);
       done = true; continue;
     }
@@ -370,8 +388,14 @@ vec3 trace(vec2 ndc){
 
   if(!done && T > 0.01){
     /* budget exhausted in the winding zone — classify by photon-sphere side.
-       w-sign alone misclassifies escaping rays that exhaust mid-infall with
-       w>0, returning black specks that beaded the ring (round-3 audit). */
+       Exact for this tracer's phase space: every ray seeds at u_cam << u_Ph,
+       and (i) b < b_crit rays are monotonic inbound (w^2 = 1/b^2 - u^2 + rs
+       u^3 > 0 everywhere — the potential barrier sits below their energy), so
+       a ray AT u > u_Ph arrived with w > 0 and captures; (ii) b > b_crit rays
+       turn at u_out < u_Ph and never reach u > u_Ph. The state (u > u_Ph,
+       w < 0) is therefore unreachable — no outgoing super-barrier sector
+       exists to misclassify (round-5 GR audit rejoinder). The +/-0.012 band
+       with the w > 0 tiebreak covers winding rays dying near the crest. */
     float uPh = 1.0/(3.0*M);
     bool cap = (u > uPh + 0.012) || (u > uPh - 0.012 && w > 0.0);
     if(!cap){

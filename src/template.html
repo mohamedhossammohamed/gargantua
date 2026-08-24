@@ -60,7 +60,8 @@ body {
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--faint);
-  text-shadow: 0 1px 3px rgba(0,0,0,0.85);   /* legible over bright disk bloom */
+  text-shadow: 0 0 3px rgba(0,0,0,0.9);   /* offset-free halo: a 1px-offset
+     shadow double-strikes 9px type (round-5 audit) */
 }
 
 /* brand — top left */
@@ -84,7 +85,7 @@ body {
   user-select: none;
 }
 #telemetry b { color: var(--ink); font-weight: 500; }
-#telemetry .k { display: inline-block; min-width: 12ch; padding-right: 1.8em; color: var(--faint); letter-spacing: 0.14em; text-transform: uppercase; font-size: 9px; text-shadow: 0 1px 3px rgba(0,0,0,0.85); }
+#telemetry .k { display: inline-block; min-width: 12ch; padding-right: 1.8em; color: var(--faint); letter-spacing: 0.14em; text-transform: uppercase; font-size: 9px; text-shadow: 0 0 3px rgba(0,0,0,0.9); }
 /* padding-right in em: ch measures the glyph, not the tracking — "integration"
    at 0.14em tracking overflows a bare 12ch box by ~1.5ch (round-4 audit) */
 #telemetry .live { color: var(--amber); }

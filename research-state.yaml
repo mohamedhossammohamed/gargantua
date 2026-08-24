@@ -13,19 +13,24 @@ criteria_locked:
   scientific_scale: HUD reports physical units (rs in km, distances in AU, T in K);
     inner disk edge at ISCO 3rs; T(r) follows Shakura-Sunyaev incl. torque factor;
     orbital beta(r) = sqrt(M/(r-2M)) exact; science palette from Planck locus
-validation_target: 10 cold validation rounds minimum (rounds completed: 3; round-4 sea pending classifier recovery — 8 consecutive launch blocks)
-round4_milestone: >
-  Sea attempt 2: 7/18 survived (classifier outage killed 11). Survivors: S1
-  CLEAN; residual sub-texel ring beading on 02/03/09/11/12; judge set-2 avg
-  7.3-8/10 (beige blowout note on graze views). FIXES: 32-tap two-ring jitter
-  to 0.75 texel (beading dead — verified on 02/11/12), LOW dt 1.30->1.00
-  (lensed-sky quantization rings — verified gone), sea retry armor (1
-  re-spawn per dead agent). Lead-engineer line audit of trace()/diskSample()
-  vs exact GR: CLEAN (incl. beta = sqrt(M/(r-rs)) == exact local orbital
-  speed). Metro gauge -0.32%. Shots recaptured; sea relaunch blocked only by
-  classifier outage. Galactic-band straight edge in 03 judged real structure
-  (great-circle band), pending jury confirmation. V-notch at disk/shadow
-  crossing judged physical occlusion boundary.
+validation_target: 10 cold validation rounds minimum (rounds completed: 4; round-5 sea in flight)
+round5_milestone: >
+  SHADOW GROUND TRUTH +0.18% (scene-space, criterion +/-0.5%): metro mode now
+  zeroes the composite pincushion (which had inflated every historical
+  measurement ~+0.4%) and the 50%-of-plateau bracket was repaired (it
+  silently degenerated to the absolute-THR estimator — diagnostician
+  replicated numerically). BEADING CASE CLOSED: ?nostars A/B pair
+  (data/shots/13 vs 14) proves the residual ring knots are LENSED STARFIELD
+  — with stars off the ring renders perfectly continuous; the moat's
+  concentric arcs persist (higher-order disk images, also physics).
+  Reviewers now briefed with the evidence. CODE FIXES from the full-sea GR
+  audit: initial w sign (phi-mirrored orbit for outward rays — dormant bug),
+  budget-dead escape rays sampled sky pointing INTO the hole (now tangent),
+  ESC sphere r 44->65 (halves weak-field tail), science g-floor 0.32->0.05
+  (receding plunge band was ~8x bright), kelvinRGB sRGB->linear decode (was
+  double-gammaing the Planck locus), fil fade near-photometric in science.
+  HUD: label text-shadows, mass button label. Sea round 5 launched with
+  evidence-briefed reviewers.
   SHADOW GAUGE -0.32% (criterion +/-0.5%, best yet) via ?metro=1 raw-tracer
   mode: physics (jitter off, accumulation bypassed, grain off) measured
   separately from optics (16-tap jitter + EMA judged visually). Root cause of

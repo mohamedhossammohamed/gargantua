@@ -8,26 +8,40 @@ A general-relativistic black-hole renderer in **one HTML file**. No build step t
 
 ## What you are looking at
 
-Every pixel is a photon traced backwards through real Schwarzschild geometry — geodesics integrated numerically each frame, not a lens-flare shader pretending. The disk you see wraps over and under the shadow because that is what light actually does near a black hole.
+Every pixel is a photon traced backwards through exact Schwarzschild geometry — the Binet equation `u'' + u = 3Mu²` integrated RK4 per ray per frame, not a lens-flare shader pretending. The disk wraps over and under the shadow because that is what light actually does near a black hole. The bright knots strung along the photon ring are not noise: turn the starfield off (`?nostars`) and they vanish — each one is a background star smeared into view by the ring's extreme magnification.
 
 ![Gargantua — orbit view, cinema grade](data/shots/S1-orbit-cinema.png)
 
-## The numbers are honest
+## The numbers are honest — and measured, not claimed
 
 | Claim | Verification |
 |---|---|
-| Shadow radius = b<sub>crit</sub> = 3√3 GM/c² | measured −0.53% against the closed-form prediction, photon-sphere interior pure black (0/255) |
+| Shadow radius = b<sub>crit</sub> = 3√3 GM/c² | **+0.2%** measured in scene space by a headless gauge that disables the AA, the accumulation, the grain and the pincushion warp before it measures anything (`?metro`), photon-sphere interior pure black (0/255) |
 | Inner disk edge at the ISCO, 6GM/c² | exact — with plunging streams rendered between ISCO and horizon |
-| Disk temperature | thin-disk profile with Eddington-limited T<sub>max</sub> = 8.6×10⁶ K at 10 M☉ (derived from Ṁ = L<sub>Edd</sub>/ηc², η = 1 − √(8/9)), not a number chosen to look pretty |
-| Doppler beaming + gravitational redshift | one side of the disk brightens and blueshifts, as it must |
-| Physical scale | HUD reports real units — r<sub>s</sub> in km from mass, camera range in r<sub>s</sub> |
+| Disk temperature | Shakura–Sunyaev profile with the no-stress inner torque factor; Eddington-limited T<sub>max</sub> = 8.6×10⁶ K at 10 M☉ (Ṁ = L<sub>Edd</sub>/ηc², η = 1 − √(8/9)) — the earlier constant was ~7× super-Eddington until a cold reviewer convicted it |
+| Relativistic shifting | Doppler g-factor in the emitter's local static frame, gravitational redshift, beaming I<sub>obs</sub> = g⁴, observed color from T<sub>obs</sub> = g·T<sub>em</sub> on the Planck locus |
+| Physical scale | HUD reports real units — r<sub>s</sub> in km from mass, camera range in r<sub>s</sub>/AU |
+
+The gauge itself has a war story: three estimator revisions, a pincushion warp that had been quietly inflating every measurement since the first commit, and a bisection bracket that silently degenerated to the naive estimator. The final version asserts its own preconditions (bloom off) or refuses to measure.
+
+## How it came to look like this
+
+A standing panel of cold-context reviewer agents convicts every frame: per-shot defect hunters, spectacle jurors, and auditors that re-derive the GR from the source. Findings from that panel, all fixed:
+
+- **The beaded photon ring** — high-order caustic images are sub-texel thin and aliased into bead-chains. Cured with temporal accumulation: 32-phase subpixel jitter blended across frames, converging any static frame to a true supersample.
+- **Black specks on the rim** — winding rays that exhausted their step budget were classified by the sign of dw/dφ, painting physically-escaping rays black. Now classified by photon-sphere side.
+- **A mirrored universe bug** — the initial du/dφ was hardcoded positive, so any ray starting *outward* integrated the φ-reflected orbit. Dormant in centered framings; fatal the moment the hole leaves frame-center.
+- **Tree rings in the haze** — coarse far-field steps quantized the terminal sky direction into concentric bands; the escape-sphere crossing is now interpolated, exactly like disk crossings.
+- **Double-gamma'd starlight** — the Planck chromaticity fit is display-referred sRGB; feeding it to a linear pipeline as radiance washed every science-mode color toward pastel.
+
+Full audit trail in `findings.md` and `research-state.yaml`.
 
 ## Engineering
 
-- Single self-contained `dist/index.html` — 549 KB with three.js vendored inline. Zero network requests. Works offline, forever.
+- Single self-contained `dist/index.html` — ~550 KB with three.js vendored inline. Zero network requests. Works offline, forever.
 - Fully procedural: disk turbulence, starfield, bloom — all computed, nothing downloaded.
-- Adaptive per-ray step control near the photon sphere; 60 fps at 1280×800 on Apple Silicon.
-- Quality presets AUTO → ULTRA (up to 1100 integration steps).
+- Adaptive per-ray step control near the photon sphere; temporal accumulation; adaptive internal resolution. 60 fps at 1280×800 on Apple Silicon.
+- Quality presets AUTO → ULTRA (up to 1500 integration steps).
 
 ## Controls
 
@@ -36,7 +50,7 @@ Every pixel is a photon traced backwards through real Schwarzschild geometry —
 | **Views** | ORBIT · GRAZE · OVERHEAD |
 | **Quality** | AUTO · LOW · MED · HIGH · ULTRA |
 | **Physics** | LENSING · DOPPLER · BLOOM · SCIENCE |
-| **Mass** | stellar-mass slider (10 M☉ default) — r<sub>s</sub>, ISCO and temperature rescale live |
+| **Mass** | STELLAR → SGR A* → GARGANTUA — r<sub>s</sub>, ISCO and temperature rescale live |
 | **Palettes** | EMBER · FILM |
 
 Press `?` in the app for the full list. `SPACE` pauses; the camera is fully draggable and zoomable.
