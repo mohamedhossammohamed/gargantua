@@ -593,10 +593,18 @@ function render(now){
   if(URL_METRO){
     mScene.uniforms.uJitter.value.set(0, 0);
   } else {
+    /* 32-tap two-ring jitter to ±0.75 texel: the high-order photon ring is a
+       sub-texel caustic — beads along its arc survive kernels narrower than
+       the line itself (round-4 sea). Extra phases cost nothing at static
+       convergence; the EMA just needs more frames to visit them all. */
     const JP = [];
-    for(let iy = 0; iy < 4; iy++) for(let ix = 0; ix < 4; ix++)
-      JP.push([-0.75+ix*0.5, -0.75+iy*0.5]);   /* 16-tap stratified, ±0.375 texel */
-    const jf = JP[frameCount & 15];
+    for(let i = 0; i < 16; i++){
+      const a = (i+0.5)*(Math.PI/8);
+      JP.push([Math.cos(a)*0.375, Math.sin(a)*0.375]);
+      const b = a + 0.11;
+      JP.push([Math.cos(b)*1.5, Math.sin(b)*1.5]);
+    }
+    const jf = JP[frameCount % 32];
     mScene.uniforms.uJitter.value.set(jf[0]/rtScene.width, jf[1]/rtScene.height);
   }
   drawPass(mScene, rtScene);

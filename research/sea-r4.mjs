@@ -78,10 +78,16 @@ const physTasks = [
 ]
 
 const all = [...reviewTasks, ...judgeTasks, ...physTasks]
-const results = await pipeline(all, t => agent(t.prompt, {
-  label: `r4:${t.shot||('set'+t.set)||t.id}`, phase: t.kind==='review'?'Defects':(t.kind==='judge'?'Judges':'Physics'),
-  schema: t.kind==='judge' ? JUDGE_SCHEMA : (t.kind==='diag' ? DIAG_SCHEMA : FIND_SCHEMA),
-}))
+/* one immediate retry when an agent dies without StructuredOutput — the
+   classifier flap killed 11/18 and 12/18 of the previous launches */
+const spawn = async (t) => {
+  const opts = {
+    label: `r4:${t.shot||('set'+t.set)||t.id}`, phase: t.kind==='review'?'Defects':(t.kind==='judge'?'Judges':'Physics'),
+    schema: t.kind==='judge' ? JUDGE_SCHEMA : (t.kind==='diag' ? DIAG_SCHEMA : FIND_SCHEMA),
+  }
+  return (await agent(t.prompt, opts)) ?? (await agent(t.prompt, opts))
+}
+const results = await pipeline(all, spawn)
 
 const defects = [], judges = [], diags = []
 all.forEach((t,i)=>{ const r = results[i]; if(!r) return
