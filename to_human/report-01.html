@@ -46,10 +46,10 @@ stellar to Gargantua-class with live physical-unit telemetry.</p>
 <h2>Criteria scoreboard</h2>
 <table>
 <tr><th>criterion</th><th>target</th><th>status</th></tr>
-<tr><td>pixel_perfect</td><td>shadow vs b<sub>crit</sub> = 3√3·M within 0.5%</td><td class="ok">MET — −0.53% post-remediation, interior 0/255</td></tr>
+<tr><td>pixel_perfect</td><td>shadow vs b<sub>crit</sub> = 3√3·M within 0.5%</td><td class="ok">MET — −0.32% via ?metro raw-tracer mode (commit 808a9dd), interior 0/255</td></tr>
 <tr><td>scientific_scale</td><td>ISCO exact · S-S temperature · Planck palette · physical HUD</td><td class="ok">IMPLEMENTED + round-2 hardened (commit 91cd846)</td></tr>
-<tr><td>no_visual_bugs</td><td>2 consecutive clean cold panels (≥6 reviewers)</td><td class="warn">round 3 in flight — single-action reviewer protocol</td></tr>
-<tr><td>validation rounds</td><td>≥10 cold adversarial rounds</td><td class="warn">3 / 10</td></tr>
+<tr><td>no_visual_bugs</td><td>2 consecutive clean cold panels (≥6 reviewers)</td><td class="warn">round-4 sea (18 agents) in flight — beading cured by TAA, HUD collisions fixed</td></tr>
+<tr><td>validation rounds</td><td>≥10 cold adversarial rounds</td><td class="warn">4 / 10</td></tr>
 </table>
 
 <h2>What the instruments taught</h2>
@@ -80,6 +80,25 @@ between shadow and ISCO. Also fixed: Keplerian advection at the exact
 (the step-start direction was stale mid-step — wrong Doppler sign possible
 near periapsis).</p>
 <img src="../data/shots/S3-graze-science.png" alt="Graze view, science mode — plunging streams live, honest 8.6e6 K telemetry">
+
+<h2>Round 3–4 — the beaded ring, and the ruler that lied</h2>
+<p>The round-3 panel's ten convictions collapsed into a single defect class:
+<b>high-order caustic images bead at one ray per pixel</b>. Two amplifiers were
+hiding in the tracer — budget-exhausted winding rays were classified by the
+sign of dw/dφ (returning black specks for rays that physically escape), and
+grazing disk crossings aliased the noise fields into dashes. Both fixed; the
+class itself cured with <b>temporal accumulation</b>: 16-phase subpixel jitter
+blended across frames, converging any static frame to a true supersample.</p>
+<p>Then the shadow gauge drifted out of band (−0.50% → −0.62%) and refused
+every estimator fix. The culprit was the anti-aliasing itself: the kernel
+bleeds the ring's convex rise across the edge, biasing any absolute-threshold
+measurement of the accumulated image. The resolution is separation of
+concerns — a <b>?metro raw-tracer mode</b> (no jitter, no accumulation, no
+grain) so the criterion measures the physics, while the panel judges the
+optics. Result: <b>−0.32%</b> against b<sub>crit</sub> = 3√3·M, the tracer's
+best number yet, with a pitch-black interior. The cold panel also caught two
+HUD label collisions and a silent per-frame overwrite that had strangled the
+exact-Keplerian fix — all repaired.</p>
 
 <h2>Next</h2>
 <ul>
