@@ -115,7 +115,9 @@ const mComp = makeMaterial(FS_COMPOSITE, {
    State
    ============================================================ */
 const QUALITY = {
-  low:    { steps: 500, dt: 1.30 },
+  low:    { steps: 500, dt: 1.00 },   /* dt 1.30 quantized the lensed sky into
+    visible dark rings on low-orbit shots (round-4); LOW stays cheapest on
+    step count alone */
   medium: { steps: 800, dt: 1.00 },
   high:   { steps: 1100, dt: 0.85 },
   ultra:  { steps: 1500, dt: 0.70 },
