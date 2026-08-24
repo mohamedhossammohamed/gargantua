@@ -9,7 +9,7 @@
 
 import * as THREE from 'three';
 import {
-  VS, FS_SCENE, FS_BRIGHT, FS_DOWN, FS_BLUR, FS_STREAK, FS_COMPOSITE
+  VS, FS_SCENE, FS_BLEND, FS_BRIGHT, FS_DOWN, FS_BLUR, FS_STREAK, FS_COMPOSITE
 } from './shaders.js';
 
 const canvas = document.getElementById('view');
@@ -91,6 +91,10 @@ const mScene = makeMaterial(FS_SCENE, {
   uScience:{value:0}, uDiskIn:{value:2.6}, uTNorm:{value:0.354},
   uGain:{value:1.18}, uOpacity:{value:0.85},
   uFlow:{value:0.70711}, uTwinkle:{value:0.6}, uTint:{value:new THREE.Vector3(1.06,0.97,0.88)},  /* exact Omega_K = sqrt(M/r^3), M=1/2 */
+  uJitter:{value:new THREE.Vector2(0,0)},
+});
+const mBlend = makeMaterial(FS_BLEND, {
+  uCur:{value:null}, uPrev:{value:null}, uMix:{value:1.0},
 });
 const mBright = makeMaterial(FS_BRIGHT, {
   uSrc:{value:null}, uTexel:{value:new THREE.Vector2()},
@@ -186,10 +190,15 @@ if(reducedMotion) introT = INTRO_LEN;
 /* ---------- sizing / render targets ---------- */
 const bufSize = new THREE.Vector2();
 let rtScene = null, rtBright = null, rtStreak = null;
+let rtAccA = null, rtAccB = null;
+let accCur = null, accNext = null, accReset = true;
 let pyramid = [];   /* {a,b} per level */
 
 function buildAll(iw, ih){
   rtScene  = makeTarget(iw, ih);
+  rtAccA   = makeTarget(iw, ih);
+  rtAccB   = makeTarget(iw, ih);
+  accCur = rtAccA; accNext = rtAccB; accReset = true;
   rtBright = makeTarget(iw>>1, ih>>1);
   rtStreak = makeTarget(iw>>1, ih>>1);
   pyramid = [];
@@ -226,6 +235,8 @@ function allocTargets(force){
 }
 function freeAll(){
   freeTarget(rtScene); freeTarget(rtBright); freeTarget(rtStreak);
+  freeTarget(rtAccA); freeTarget(rtAccB);
+  accCur = accNext = null;
   for(const lvl of pyramid){ freeTarget(lvl.a); freeTarget(lvl.b); }
 }
 function syncCanvasSize(){
@@ -543,7 +554,8 @@ function updateSceneUniforms(){
   u.uTNorm.value = massPhysics(MASSES[state.massIdx].msun).tMaxK/1e7;
   u.uGain.value = palCur.gain;
   u.uOpacity.value = 0.85;
-  u.uFlow.value = 0.55;
+  u.uFlow.value = 0.70711;   /* exact Keplerian Omega_K = sqrt(M/r^3), M = 1/2
+    (round-2 fix was silently overwritten here each frame until round-3 caught it) */
   u.uTwinkle.value = reducedMotion ? 0.15 : 0.6;
   u.uTint.value.set(palCur.tint[0], palCur.tint[1], palCur.tint[2]);
 }
@@ -573,13 +585,29 @@ function render(now){
   tweenPalette(dt);
   updateSceneUniforms();
 
-  /* --- scene pass --- */
+  /* --- scene pass with temporal accumulation: subpixel jitter + EMA blend
+     converges static frames to a true supersample — the high-order photon-ring
+     images are exponentially thin and bead at one ray per pixel (round-3) --- */
+  const JP = [[-0.25,-0.25],[0.25,-0.25],[-0.25,0.25],[0.25,0.25],
+              [-0.625,0.125],[0.125,-0.625],[0.375,0.625],[-0.125,-0.375]];
+  const jf = JP[frameCount & 7];
+  mScene.uniforms.uJitter.value.set(jf[0]/rtScene.width, jf[1]/rtScene.height);
   drawPass(mScene, rtScene);
+
+  const camMoving = Math.abs(cam.az-cam.tAz)+Math.abs(cam.el-cam.tEl)+Math.abs(cam.dist-cam.tDist) > 1e-4;
+  const palMoving = Math.abs(palCur.gain-palTgt.gain)+Math.abs(palCur.sat-palTgt.sat)
+                  + Math.abs(palCur.streakStr-palTgt.streakStr)+Math.abs(palCur.doppler-palTgt.doppler) > 2e-3;
+  mBlend.uniforms.uCur.value = rtScene.texture;
+  mBlend.uniforms.uPrev.value = accCur.texture;
+  mBlend.uniforms.uMix.value = accReset ? 1.0 : ((!state.paused || camMoving || palMoving) ? 0.5 : 0.12);
+  drawPass(mBlend, accNext);
+  const accT = accCur; accCur = accNext; accNext = accT;
+  accReset = false;
 
   if(state.bloom){
     /* bright pass at half internal res */
     const ub = mBright.uniforms;
-    ub.uSrc.value = rtScene.texture;
+    ub.uSrc.value = accCur.texture;
     ub.uTexel.value.set(1/rtScene.width, 1/rtScene.height);
     drawPass(mBright, rtBright);
 
@@ -610,9 +638,9 @@ function render(now){
 
   /* --- composite --- */
   const uc = mComp.uniforms;
-  uc.uScene.value = rtScene.texture;
-  for(let i=0;i<5;i++) uc['uB'+i].value = state.bloom ? pyramid[i].a.texture : rtScene.texture;
-  uc.uStreak.value = state.bloom ? rtStreak.texture : rtScene.texture;
+  uc.uScene.value = accCur.texture;
+  for(let i=0;i<5;i++) uc['uB'+i].value = state.bloom ? pyramid[i].a.texture : accCur.texture;
+  uc.uStreak.value = state.bloom ? rtStreak.texture : accCur.texture;
   uc.uTime.value = simTime;
   uc.uBloomStr.value = palCur.bloomStr;
   uc.uStreakStr.value = palCur.streakStr;

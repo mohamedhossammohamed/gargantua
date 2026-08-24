@@ -36,6 +36,7 @@ uniform float uOpacity;
 uniform float uFlow;
 uniform float uTwinkle;
 uniform vec3  uTint;
+uniform vec2  uJitter;     /* subpixel jitter for temporal accumulation */
 
 const float RS        = 1.0;    /* Schwarzschild radius */
 const float DISK_IN   = 2.6;    /* just outside ISCO (3 rs) for drama */
@@ -154,6 +155,12 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   /* I_obs = g^uBeamExp * I_em (4 = bolometric science, 3 = cinematic tone) */
   float boost = pow(shift, uBeamExp);
 
+  /* grazing filter: near-tangent crossings sweep huge azimuth per pixel and
+     the high-frequency noise fields alias into beaded speckle (round-3:
+     dotted photon ring, dashed lower arcs). Fade HF layers to their mean as
+     the incidence flattens; the low-frequency body stays continuous. */
+  float graze = smoothstep(0.02, 0.32, abs(rayDir.y));
+
   /* plunging region FIRST — it lives inside the disk's inner envelope and
      must not be killed by the envelope early-return (round-2 audit) */
   if(uScience > 0.5){
@@ -163,8 +170,8 @@ vec4 diskSample(vec3 q, vec3 rayDir){
       float wff = 0.70711*2.4*inversesqrt(rr*rr*rr);
       float phi2 = phiP - wff*uTime*1.6;
       float rDrift = rr + uTime*0.30*inversesqrt(max(rr-1.0, 0.25));
-      float ns = vnoise(vec3(cos(phi2)*3.0, sin(phi2)*3.0, rDrift*3.5));
-      float densP = band*band*pow(clamp(ns*1.8-0.55, 0.0, 1.0), 1.4);
+      float ns = mix(0.5, vnoise(vec3(cos(phi2)*1.9, sin(phi2)*1.9, rDrift*2.2)), graze);
+      float densP = band*band*pow(clamp(ns*1.75-0.42, 0.0, 1.0), 1.1);
       vec3 pc = kelvinRGB(uTNorm*1e7*0.55)*0.40;
       emis += pc*densP*uGain*boost;
       alpha = clamp(densP*0.55*uOpacity, 0.0, 1.0);
@@ -184,8 +191,8 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   float t1 = uTime*0.05;
 
   float n1 = fbm5(vec3(ca_*1.35, sa_*1.35, lr*4.6)+vec3(0.0,0.0,t1));
-  float n2 = fbm4(vec3(ca_*2.9+9.4, sa_*2.9, lr*8.8)+vec3(0.0,0.0,-t1*1.9));
-  float n3 = vnoise(vec3(ca_*7.5, sa_*7.5, lr*17.0)+vec3(t1*3.1));
+  float n2 = mix(0.5, fbm4(vec3(ca_*2.9+9.4, sa_*2.9, lr*8.8)+vec3(0.0,0.0,-t1*1.9)), mix(0.6, 1.0, graze));
+  float n3 = mix(0.5, vnoise(vec3(ca_*7.5, sa_*7.5, lr*17.0)+vec3(t1*3.1)), graze);
 
   float dens = n1*0.58+n2*0.30+n3*0.16;
   dens = clamp(dens*1.62-0.30, 0.0, 1.0);
@@ -193,7 +200,7 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   dens *= env;
   if(dens < 0.004) return vec4(emis, alpha);
 
-  float fil = smoothstep(0.52, 0.88, n2);
+  float fil = smoothstep(0.52, 0.88, n2)*mix(0.35, 1.0, graze);
 
   float temp;
   vec3 bodyCol;
@@ -313,7 +320,17 @@ vec3 trace(vec2 ndc){
     /* disk plane crossing between (u,phi) and (uN,phiN) */
     float yCur = (1.0/uN)*( cos(phiN)*e1.y + sin(phiN)*e2.y );
     if(yPrev*yCur < 0.0){
-      float f = yPrev/(yPrev-yCur);
+      /* secant-refined crossing: two iterations pin the plane hit to
+         sub-step precision (single linear interp jittered thin arcs) */
+      float t0 = 0.0, t1 = 1.0, y0 = yPrev, y1 = yCur;
+      float f = y0/(y0-y1);
+      for(int k=0;k<2;k++){
+        float um = mix(u, uN, f);
+        float ym = (1.0/um)*(cos(mix(phi,phiN,f))*e1.y + sin(mix(phi,phiN,f))*e2.y);
+        if(y0*ym < 0.0){ t1 = f; y1 = ym; } else { t0 = f; y0 = ym; }
+        f = t0 + y0*(t1-t0)/(y0-y1);
+      }
+      f = clamp(f, 0.0, 1.0);
       float uH = mix(u, uN, f);
       float phiH = mix(phi, phiN, f);
       float rH = 1.0/uH;
@@ -336,16 +353,38 @@ vec3 trace(vec2 ndc){
   }
 
   if(!done && T > 0.01){
-    /* budget exhausted in the winding zone — classify by radial sense */
-    col += w < 0.0 ? T*skyColor(normalize(cos(phi)*e1 + sin(phi)*e2)) : vec3(0.0);
+    /* budget exhausted in the winding zone — classify by photon-sphere side.
+       w-sign alone misclassifies escaping rays that exhaust mid-infall with
+       w>0, returning black specks that beaded the ring (round-3 audit). */
+    float uPh = 1.0/(3.0*M);
+    bool cap = (u > uPh + 0.012) || (u > uPh - 0.012 && w > 0.0);
+    if(!cap){
+      vec3 er = cos(phi)*e1 + sin(phi)*e2;
+      vec3 ep = -sin(phi)*e1 + cos(phi)*e2;
+      col += T*skyColor(normalize((-w/(u*u))*er + (1.0/u)*ep));
+    }
   }
   return col;
 }
 
 void main(){
   vec2 ndc = vUv*2.0-1.0;
-  vec3 col = trace(ndc);
+  vec3 col = trace(ndc + uJitter);
   outColor = vec4(col, 1.0);
+}`;
+
+/* ---------------- temporal accumulation blend ---------------- */
+export const FS_BLEND = `
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uCur;
+uniform sampler2D uPrev;
+uniform float uMix;
+void main(){
+  /* EMA of jittered scene renders: converges to a supersampled image when
+     the frame is static (paused), degrades to mild motion blur otherwise */
+  outColor = vec4(mix(texture(uPrev, vUv).rgb, texture(uCur, vUv).rgb, uMix), 1.0);
 }`;
 
 /* ---------------- post: bright pass ---------------- */
@@ -463,10 +502,10 @@ void main(){
   float r2 = dot(cc,cc);
   vec2 uv = 0.5+cc*(1.0-0.045*r2);
   float ca = 0.0125*r2;
-  vec3 col;
-  col.r = texture(uScene, uv+cc*ca).r;
-  col.g = texture(uScene, uv).g;
-  col.b = texture(uScene, uv-cc*ca).b;
+  /* scene stays RGB-aligned: per-channel scene offsets split point stars into
+     rainbow specks (round-3 audit). The chromatic fringe lives only on the
+     anamorphic streak, where it reads as lens character. */
+  vec3 col = texture(uScene, uv).rgb;
 
   if(uHasGlow > 0.5){
     vec3 b = texture(uB0, uv).rgb*1.00;
@@ -475,7 +514,11 @@ void main(){
     b += texture(uB3, uv).rgb*0.48;
     b += texture(uB4, uv).rgb*0.36;
     col += b*(uBloomStr*0.30);
-    col += texture(uStreak, uv).rgb*uStreakStr;
+    vec3 st;
+    st.r = texture(uStreak, uv+cc*ca).r;
+    st.g = texture(uStreak, uv).g;
+    st.b = texture(uStreak, uv-cc*ca).b;
+    col += st*uStreakStr;
   }
   col *= uExposure;
   col = aces(col);

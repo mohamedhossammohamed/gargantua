@@ -11,7 +11,7 @@ const ok = m => console.log('ok:', m);
    second #version would be illegal. The gate enforces that invariant. */
 const shadersSrc = fs.readFileSync(root + 'src/shaders.js', 'utf8');
 const shaders = [...shadersSrc.matchAll(/export const \w+ = `([\s\S]*?)`;$/gm)].map(m => m[1]);
-if(shaders.length !== 7) fail(`expected 7 shaders, found ${shaders.length}`);
+if(shaders.length !== 8) fail(`expected 8 shaders, found ${shaders.length}`);
 const declared = new Set();
 if(/`#version/.test(shadersSrc)) fail('shader string embeds #version (three injects its own)');
 for(const src of shaders){
