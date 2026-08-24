@@ -56,10 +56,16 @@ round3_results: >
   round-4 panel per user directive ("sea of sub agents", goal: spectacular
   AND physically accurate).
 pending_directives:
-  - github_pages: >
-      User directive (via /subtask, fork died on API error): after the loop
-      finishes, push the HTML as GitHub Pages with a simple readme. Owner:
-      this loop's endgame.
+  - github_pages: DONE (2026-08-24). Repo live: github.com/mohamedhossammohamed/gargantua,
+    Pages released via .github/workflows/deploy.yml -> https://mohamedhossammohamed.github.io/gargantua/
+    (verified HTTP 200). Description + homepage set via API. Shots converted
+    to jpeg, PNG blobs stripped from history (277MB -> 13.5MB pack).
+  - push_protocol: >
+      User directive: push EVERY major improvement to GitHub. At each stable
+      milestone (gauge in band + checks pass + eyeballed): commit, then
+      node tools/run-detached.mjs tools/push.mjs /tmp/gargantua-push.log
+      (detached — survives the 120s shell cap; plain pushes 408 on this link).
+
 h1h3_result: >
   IMPLEMENTED behind Science toggle (Y) — exact ISCO inner edge (3rs) with
   plunging infall streams; Shakura-Sunyaev T(r)=T_max*f(x)/0.4879 with
