@@ -112,6 +112,6 @@ async function measure(presses, label, lensOff){
   return { label, ...res, predR };
 }
 
-await measure(4, 'ultra lensed  ', false);
-await measure(4, 'ultra straight', true);
+await measure(0, 'ultra lensed  ', false);   /* 0 presses: ULTRA is the boot default */
+await measure(0, 'ultra straight', true);
 await browser.close();

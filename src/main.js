@@ -153,8 +153,10 @@ function massPhysics(msun){
 }
 
 const state = {
-  quality: 'auto',
-  qKey: 'medium',
+  quality: 'ultra',   /* ULTRA is the default experience (Lead Engineer's call):
+     full 1500-step integration without the adapter trading it away; AUTO
+     remains one click for weaker GPUs */
+  qKey: 'ultra',
   resScale: 1.0,
   tierIdx: TIERS.length-1,
   paused: false,

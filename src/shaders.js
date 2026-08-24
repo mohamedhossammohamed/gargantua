@@ -334,8 +334,14 @@ vec3 trace(vec2 ndc){
     float wN = w + (dphi/6.0)*(k1w+2.0*k2w+2.0*k3w+k4w);
     float phiN = phi + dphi;
 
-    if(uN < 0.0 || uN > 1.0/RS){ done = true; continue; }   /* captured */
-    if(uN < 1.0/sqrt(ESC_R2) && wN < 0.0){          /* escaped outward */
+    /* horizon capture: uN past the horizon, or the integrator overshooting
+       u below zero while INBOUND (nonsense at r=∞ — round-6 GR audit). An
+       OUTBOUND ray (w<0) can never be captured: the old uN-below-zero test
+       blackened escaping rays whose step jumped past r=∞, spuriously
+       widening the ring — that band was inflating the measured radius. */
+    if(uN > 1.0/RS || (uN < 0.0 && wN > 0.0)){ done = true; continue; }
+    /* escaped outward — the uN<0 overshoot lands here now (wN<0) */
+    if(wN < 0.0 && uN < 1.0/sqrt(ESC_R2)){
       /* interpolate the sphere crossing: far-field rays move nearly radially,
          so the raw step endpoint overshoots the sphere by tens of rs and
          quantizes the terminal sky direction into concentric rings

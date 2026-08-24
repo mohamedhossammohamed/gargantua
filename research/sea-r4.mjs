@@ -45,19 +45,19 @@ const DIAG_SCHEMA = {
 const REVIEW = `STRICT PROTOCOL — follow exactly, in order:
 STEP 1: Use the Read tool on exactly the image path listed below. Do nothing else — no code reading, no shell, no analysis prose.
 STEP 2: Immediately call StructuredOutput. clean=true if the image shows no genuine visual defect; otherwise list findings (max 4) with shot filename, severity, where-in-frame, description. Visual defects = banding, seams, ghosting, blur smearing, double edges, HUD glitches, geometry contradicting gravitational lensing.
-NOT defects (established by controlled A/B evidence, do not convict): film grain; palette and bloom choices; bright knots or speckle along the photon ring — an identical frame with the starfield disabled (data/shots/14-closeup-nostars.png vs 13-closeup-stars.png) proves these are LENSED STAR IMAGES, i.e. correct physics; faint concentric arcs in the dark moat near the shadow are higher-order lensed disk images, also correct physics.
+NOT defects (established by controlled A/B evidence, do not convict): film grain; palette and bloom choices; bright knots or speckle along the photon ring — an identical frame with the starfield disabled (data/shots/14-closeup-nostars.jpg vs 13-closeup-stars.jpg) proves these are LENSED STAR IMAGES, i.e. correct physics; faint concentric arcs in the dark moat near the shadow are higher-order lensed disk images, also correct physics.
 Do NOT write any prose response. The StructuredOutput call IS your entire answer.`
 
-const SHOTS = ['S1-orbit-cinema.png','S2-orbit-science.png','S3-graze-science.png','S4-science-gargantua.png',
-  'S5-science-nolensing.png','01-orbit-default.png','02-graze.png','03-overhead.png',
-  '09-ultra-graze.png','10-low-orbit.png','11-closeup-paused.png','12-closeup-frozen.png']
+const SHOTS = ['S1-orbit-cinema.jpg','S2-orbit-science.jpg','S3-graze-science.jpg','S4-science-gargantua.jpg',
+  'S5-science-nolensing.jpg','01-orbit-default.jpg','02-graze.jpg','03-overhead.jpg',
+  '09-ultra-graze.jpg','10-low-orbit.jpg','11-closeup-paused.jpg','12-closeup-frozen.jpg']
 
 const JUDGE = `You are a spectacle juror. Use the Read tool on each image path listed below (no other tools, no prose). Then call StructuredOutput: score each shot 0-10 for sheer visual impact — would this frame make someone stop scrolling? 10 = Interstellar-poster grade. note = one clause on what lifts or sinks it. weakest = filename of the weakest shot. Be ruthless; average sci-fi wallpapers score 5.
 Do NOT write any prose response.`
 const JUDGE_SETS = [
-  ['S1-orbit-cinema.png','S3-graze-science.png','11-closeup-paused.png'],
-  ['02-graze.png','09-ultra-graze.png','04-orbit-film.png'],
-  ['S2-orbit-science.png','S4-science-gargantua.png','10-low-orbit.png'],
+  ['S1-orbit-cinema.jpg','S3-graze-science.jpg','11-closeup-paused.jpg'],
+  ['02-graze.jpg','09-ultra-graze.jpg','04-orbit-film.jpg'],
+  ['S2-orbit-science.jpg','S4-science-gargantua.jpg','10-low-orbit.jpg'],
 ]
 
 const PHYS_A = `GR correctness audit. Read ${SRC}/shaders.js ONLY the trace() function. Verify against exact Schwarzschild results: (1) Binet equation u'' + u = 3Mu^2 with M=rs/2 — confirm the RHS sign and the RK4 step; (2) impact parameter b = r sin(psi)/sqrt(1-rs/r) is conserved by construction; (3) shadow edge for critical rays: b_crit = 3*sqrt(3)*M — does the capture test (uN > 1/RS) combined with the winding budget reproduce this?; (4) the budget-exhaustion fallback classifies by photon-sphere side u_Ph = 1/(3M) with a 0.012 marginal band — is that classification physically sound (escape iff u < u_Ph when budget dies, modulo the marginal band)?; (5) the secant-refined plane crossing — any way it can pick the wrong branch or NaN? Report violations as findings with shot:'code', severity by physical impact. Then StructuredOutput — that call is your entire answer. No prose.`

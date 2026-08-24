@@ -37,8 +37,8 @@ await shot('05-graze-film',       ['2', 'p']);
 await shot('06-nolensing-orbit',  ['l']);
 await shot('07-nodoppler-orbit',  ['d']);
 await shot('08-nobloom-orbit',    ['b']);
-await shot('09-ultra-graze',      ['q', 'q', 'q', 'q', '2'], 0, 1400);
-await shot('10-low-orbit',        ['q']);
+await shot('09-ultra-graze',      ['2'], 0, 1400);   /* ULTRA is the boot default */
+await shot('10-low-orbit',        ['q', 'q']);        /* ultra -> auto -> low */
 await shot('11-closeup-paused',   ['3'], 14);
 await page.keyboard.press(' ');
 await new Promise(r => setTimeout(r, 300));
