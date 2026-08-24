@@ -83,7 +83,9 @@ body {
   user-select: none;
 }
 #telemetry b { color: var(--ink); font-weight: 500; }
-#telemetry .k { display: inline-block; min-width: 12ch; color: var(--faint); letter-spacing: 0.14em; text-transform: uppercase; font-size: 9px; }
+#telemetry .k { display: inline-block; min-width: 12ch; padding-right: 1.8em; color: var(--faint); letter-spacing: 0.14em; text-transform: uppercase; font-size: 9px; }
+/* padding-right in em: ch measures the glyph, not the tracking — "integration"
+   at 0.14em tracking overflows a bare 12ch box by ~1.5ch (round-4 audit) */
 #telemetry .live { color: var(--amber); }
 
 /* controls — bottom right */

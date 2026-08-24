@@ -13,7 +13,18 @@ criteria_locked:
   scientific_scale: HUD reports physical units (rs in km, distances in AU, T in K);
     inner disk edge at ISCO 3rs; T(r) follows Shakura-Sunyaev incl. torque factor;
     orbital beta(r) = sqrt(M/(r-2M)) exact; science palette from Planck locus
-validation_target: 10 cold validation rounds minimum (rounds completed: 3, round 4 = 18-agent sea in flight)
+validation_target: 10 cold validation rounds minimum (rounds completed: 3; round-4 sea relaunching after classifier outage)
+round4_milestone: >
+  SHADOW GAUGE -0.32% (criterion +/-0.5%, best yet) via ?metro=1 raw-tracer
+  mode: physics (jitter off, accumulation bypassed, grain off) measured
+  separately from optics (16-tap jitter + EMA judged visually). Root cause of
+  the -0.57/-0.62% post-TAA drift: AA kernel bleed biases ANY absolute
+  threshold estimator on the accumulated image (convex ring rise); also fixed
+  estimator to 50%-of-plateau crossing. HUD label collisions fixed (ch units
+  do not include letter-spacing — padding-right in em). Sea attempt 1: 6/18
+  agents survived a classifier outage; confirmed findings all real (residual
+  sub-texel ring beading on S1/S4, HUD collisions) — all addressed; full
+  18-agent relaunch pending classifier recovery.
 round3_results: >
   7/7 reviewers returned (single-action protocol works). 10 confirmed findings
   collapsed to ONE defect class: high-order caustic images bead at 1 ray/pixel

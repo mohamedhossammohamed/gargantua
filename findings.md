@@ -68,3 +68,33 @@ large-scale structure:
 - Can TAA-lite jitter (H5) run at 60fps budget alongside volumetric slab?
 - Is the user's machine GPU-bound at ultra? (Adaptive controller will tell us
   via telemetry once they interact.)
+
+## Round 3–4 (cold adversarial sea) — defect classes and cures
+
+- **High-order caustic beading (10 convictions, one class).** The photon ring
+  and thin lensed arcs are images of exponentially-thin caustics; at one ray
+  per pixel they render as bead-chains. Two amplifiers found and fixed:
+  (1) budget-exhausted winding rays were classified by the sign of w — an
+  escaping ray can exhaust mid-infall with w>0 and returned BLACK, speckling
+  the rim; correct classification is by photon-sphere side (u vs 1/(3M)).
+  (2) grazing disk crossings alias the high-frequency noise fields into
+  speckle — fade HF layers to their mean by incidence angle (mean-preserving).
+  Cure for the class itself: 16-tap stratified subpixel jitter + EMA
+  temporal accumulation (converges static frames to a supersample).
+- **Metrology vs anti-aliasing (gauge drift −0.50% → −0.62%).** The AA kernel
+  bleeds the ring's convex rise across the edge; ANY absolute-threshold
+  estimator on the accumulated image reads the edge ~0.4 texel small.
+  Resolution is separation of concerns, not threshold-tuning: `?metro=1`
+  measures the RAW tracer (no jitter, no accumulation, no grain) → **−0.32%**,
+  best yet; the AA is judged visually by the review panel. Also upgraded the
+  estimator to a 50%-of-plateau crossing (unbiased for step and ramp).
+- **`ch` units do not include letter-spacing.** A tracked 11-character label
+  overflows a `min-width: 12ch` box by ~1.5ch — HUD label/value collision.
+  Fix: `padding-right` in em. (Caught by cold image review, not by eyes.)
+- **Per-frame uniform writes silently override material initializers.** The
+  round-2 exact-Keplerian uFlow=0.70711 was strangled by
+  `updateSceneUniforms()` writing 0.55 every frame. Invariant: any constant
+  physics uniform must be set in exactly one place.
+- **Chromatic aberration on the scene pass splits point stars into rainbow
+  specks** at frame edges. CA now lives only on the anamorphic streak, where
+  per-channel offsets read as lens character instead of sensor defects.
