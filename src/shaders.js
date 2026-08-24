@@ -156,13 +156,12 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   float beta = clamp(sqrt(0.5/max(rr-RS, 0.55)), 0.0, 0.80);
   vec3 vd = vec3(-q.z, 0.0, q.x)/max(rr, 1e-4);
   float gam = inversesqrt(max(1.0-beta*beta, 0.01));
-  /* the angle is measured in the emitter's LOCAL static frame: the radial
-     component of the photon direction shrinks by sqrt(1-rs/r) under the
-     lapse, so the coordinate dot product under-beams steeply-radial rays
-     (round-5 emission audit). mu = tangential alignment. */
+  /* dot(vd,-rayDir) IS the local-static-frame tangential cosine already:
+     the plot tangent is (K^r, L/r) with norm E/sqrt(f), giving
+     mu = b*sqrt(f)/r = sin(alpha) in the static frame — no lapse correction
+     (the round-5 cosLoc term was spurious AND backwards; round-7 audit) */
   float mu = dot(vd, -rayDir);
-  float cosLoc = mu/sqrt(max(mu*mu + (1.0-mu*mu)*(1.0-RS/rr), 1e-3));
-  float dopp = 1.0/(gam*(1.0-beta*cosLoc));
+  float dopp = 1.0/(gam*(1.0-beta*mu));
   float grav = sqrt(max(1.0-RS/rr, 0.04))*gravObs;
   /* science mode keeps the physical deep redshift — the 0.32 tone floor was
      brightening the receding plunge band ~8x bolometric (round-4 emission
@@ -230,11 +229,13 @@ vec4 diskSample(vec3 q, vec3 rayDir){
     float x = max(rr/rin, 1.0001);
     float fx = pow(x,-0.75)*pow(max(1.0-inversesqrt(x), 0.0), 0.25);
     float tK = uTNorm*1e7*(fx/0.4879);
-    /* the shift CONSUMED: T_obs = g*T_em — bolometric g^4 on an unshifted
-       spectrum was internally inconsistent (round-5 emission audit: the old
-       temp *= shift store was dead; approaching side never whitened) */
+    /* the shift CONSUMED for chromaticity: T_obs = g*T_em colors the emission,
+       while the amplitude keeps the EMITTED T^4 — beaming enters exactly once
+       via boost (I_obs = g^4 I_em). The round-5 edit fed tObs into the
+       amplitude too, double-counting beaming to g^8 (~14x overbright at the
+       clamp — round-7 emission audit, HIGH). */
     float tObs = tK*shift;
-    float ratio = clamp(tObs/(uTNorm*1e7), 0.0, 1.0);
+    float ratio = clamp(tK/(uTNorm*1e7), 0.0, 1.0);
     temp = tObs/1e7;
     bodyCol = kelvinRGB(tObs)*pow(ratio, 4.0);     /* bolometric T^4 */
   } else {

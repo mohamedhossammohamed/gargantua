@@ -52,6 +52,8 @@ body {
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
 #hud.hidden, #intro.gone { opacity: 0; }
 #hud.hidden { visibility: hidden; }   /* invisible chrome must not stay clickable */
+#hud.dim { opacity: 0.35; }           /* idle auto-dim: the poster reads through
+   the chrome (repeated jury note); pointer or key restores */
 #hud { transition: opacity 0.45s ease, visibility 0.45s; }
 
 .label {

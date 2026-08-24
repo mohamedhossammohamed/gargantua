@@ -19,7 +19,7 @@ async function shot(name, keys = [], settle = 1000){
   await page.mouse.wheel({ deltaY: 10 });
   for(const k of keys){ await page.keyboard.press(k); await new Promise(r => setTimeout(r, 140)); }
   await new Promise(r => setTimeout(r, settle));
-  await page.screenshot({ path: `${outDir}/${name}.png` });
+  await page.screenshot({ path: `${outDir}/${name}.jpg`, type: 'jpeg', quality: 92 });
   console.log('shot:', name);
 }
 await shot('S1-orbit-cinema');

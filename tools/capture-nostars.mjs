@@ -25,7 +25,7 @@ async function shot(name, query){
   await new Promise(r => setTimeout(r, 2500));   /* camera settles + accumulator converges */
   await page.keyboard.press(' ');
   await new Promise(r => setTimeout(r, 1800));   /* EMA convergence at uMix 0.12 */
-  await page.screenshot({ path: `${outDir}/${name}.png` });
+  await page.screenshot({ path: `${outDir}/${name}.jpg`, type: 'jpeg', quality: 92 });
   console.log('shot:', name);
 }
 

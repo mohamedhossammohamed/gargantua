@@ -446,6 +446,7 @@ function toggleHud(){
 
 addEventListener('keydown', e => {
   if(e.repeat) return;
+  wake();
   /* a focused chip keeps native Space/Enter activation */
   if((e.key === ' ' || e.key === 'Enter') && e.target instanceof HTMLButtonElement) return;
   switch(e.key){
@@ -594,6 +595,7 @@ function render(now){
   updateCamera(dt);
   tweenPalette(dt);
   updateSceneUniforms();
+  hudEl.classList.toggle('dim', cam.idleTimer > 8 && introT >= INTRO_LEN);
 
   /* --- scene pass with temporal accumulation: subpixel jitter + EMA blend
      converges static frames to a true supersample — the high-order photon-ring

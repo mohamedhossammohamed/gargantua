@@ -25,7 +25,7 @@ async function shot(name, keys = [], wheel = 0, settle = 900){
   for(const k of keys){ await page.keyboard.press(k); await new Promise(r => setTimeout(r, 120)); }
   if(wheel) for(let i = 0; i < wheel; i++){ await page.mouse.wheel({ deltaY: -120 }); await new Promise(r => setTimeout(r, 40)); }
   await new Promise(r => setTimeout(r, settle));   /* camera damping settles */
-  await page.screenshot({ path: `${outDir}/${name}.png` });
+  await page.screenshot({ path: `${outDir}/${name}.jpg`, type: 'jpeg', quality: 92 });
   console.log('shot:', name);
 }
 
@@ -42,7 +42,7 @@ await shot('10-low-orbit',        ['q', 'q']);        /* ultra -> auto -> low */
 await shot('11-closeup-paused',   ['3'], 14);
 await page.keyboard.press(' ');
 await new Promise(r => setTimeout(r, 300));
-await page.screenshot({ path: `${outDir}/12-closeup-frozen.png` });
+await page.screenshot({ path: `${outDir}/12-closeup-frozen.jpg`, type: 'jpeg', quality: 92 });
 console.log('shot: 12-closeup-frozen');
 
 console.log('PAGE ERRORS:', errors.length);
