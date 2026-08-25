@@ -10,7 +10,8 @@ carries its error.
 
 | Phenomenon | Governing theory | Status | Evidence |
 |---|---|---|---|
-| Null geodesics | Binet form of the exact Schwarzschild null orbit: u'' + u = 3Mu², RK4 | **Exact ODE, numerical solution** | suite: shadow boundary −0.0000% at two camera radii; convergence order gated to p ∈ [4.06, 4.11]; Binet invariant ≤ 1e-7 |
+| Null geodesics | Binet form of the exact Schwarzschild null orbit: u'' + u = 3Mu², RK4 | **Exact ODE, numerical solution** | suite: shadow boundary −0.0000% at two camera radii and both shipped tiers; convergence order gated to p ∈ [4.06, 4.11] and independently verified GENUINE 4th order (equal-total-φ control reproduces b* to 9 decimals; zero budget-death contamination at any shipped tier — round-15 numerical); Binet invariant ≤ 1e-7 with dt⁴ scaling confirmed same-b |
+| Escaped-ray sky direction | static-frame tangent reconstruction (tangential leg ×√f_esc) | exact reconstruction at the escape sphere (round-15: the coordinate slope compressed the tangent by √f, a ~0.2° astrometric bias on every lensed star — distinct from and additive to the documented 2M/r tail) | GR audit round-15 |
 | Event horizon | r = rs | exact (capture test) | interior luminance 0/255 in metro gauge |
 | Photon sphere | r = 1.5 rs | exact (u_Ph = 1/(3M)) | separatrix resolves at b_crit ± 1e-7; 3.1-orbit winding |
 | Shadow radius | b_crit = 3√3 GM/c² | **+0.15% measured, GPU end-to-end, scene space** | ?metro gauge (AA/accumulation/grain/pincushion off; bloom/ultra/HDR asserted) — this number is also the fp32 executed-arithmetic validation (the suite is fp64 source-level; the two chains agree, closing the float gap the round-11 audit flagged) |

@@ -239,10 +239,12 @@ vec4 diskSample(vec3 q, vec3 rayDir, float muDisk, float muPl){
 
   /* blend the RESULT, not the field: S(mix(f)) != mix(S(f)) for nonlinear S —
      evaluating the smoothstep on the angle-blended field starved mid-
-     inclinations of the filament mean (round-14). mix(0.080, S(raw), graze)
-     keeps the mean exactly 0.080-blended at every angle. The 0.080 anchor is
-     the measured E[smoothstep(0.52,0.88,fbm4)] (suite test 8, n=2e5). */
-  float fil = mix(0.080, smoothstep(0.52, 0.88, n2raw), graze);
+     inclinations of the filament mean (round-14). mix(0.091, S(raw), graze)
+     keeps the mean exactly blended at every angle. The 0.091 anchor is the
+     measured E[smoothstep(0.52,0.88,fbm4)] with the ROT matrix applied in the
+     correct column-major orientation (suite test 8, n=2e5; round-15 fixed the
+     transposed port that had calibrated 0.080 against the inverse field). */
+  float fil = mix(0.091, smoothstep(0.52, 0.88, n2raw), graze);
 
   float temp;
   vec3 bodyCol;
@@ -375,34 +377,15 @@ vec3 trace(vec2 ndc){
     float wN = w + (dphi/6.0)*(k1w+2.0*k2w+2.0*k3w+k4w);
     float phiN = phi + dphi;
 
-    /* horizon capture: uN past the horizon, or the integrator overshooting
-       u below zero while INBOUND (nonsense at r=∞ — round-6 GR audit). An
-       OUTBOUND ray (w<0) can never be captured: the old uN-below-zero test
-       blackened escaping rays whose step jumped past r=∞, spuriously
-       widening the ring — that band was inflating the measured radius. */
-    if(uN > 1.0/RS || (uN < 0.0 && wN > 0.0)){ done = true; continue; }
-    /* escaped outward — the uN<0 overshoot lands here now (wN<0) */
-    if(wN < 0.0 && uN < 1.0/sqrt(ESC_R2)){
-      /* interpolate the sphere crossing: far-field rays move nearly radially,
-         so the raw step endpoint overshoots the sphere by tens of rs and
-         quantizes the terminal sky direction into concentric rings
-         (round-5 regression after ESC r 44->65) */
-      float uEsc = 1.0/sqrt(ESC_R2);
-      float f = clamp((u - uEsc)/max(u - uN, 1e-6), 0.0, 1.0);
-      float phiE = mix(phi, phiN, f);
-      float wE = mix(w, wN, f);
-      vec3 er = cos(phiE)*e1 + sin(phiE)*e2;
-      vec3 ep = -sin(phiE)*e1 + cos(phiE)*e2;
-      vec3 vdir = normalize((-wE/(uEsc*uEsc))*er + (1.0/uEsc)*ep);
-      col += T*skyColor(vdir);
-      done = true; continue;
-    }
-
-    /* disk plane crossing between (u,phi) and (uN,phiN) */
+    /* disk plane crossing FIRST — a step that both crosses the plane and ends
+       captured/escaped must still bank its emission: dropping it shaved the
+       innermost plunge crescent hugging the shadow limb (round-15) */
     float yCur = (1.0/uN)*( cos(phiN)*e1.y + sin(phiN)*e2.y );
     if(yPrev*yCur < 0.0 || coplanar){
-      /* secant-refined crossing: two iterations pin the plane hit to
-         sub-step precision (single linear interp jittered thin arcs) */
+      /* false-position (regula falsi) crossing refinement: linear-rate
+         contraction toward the CHORD surrogate — direction accuracy ~17x
+         raw linear interp; positional accuracy bounded by the surrogate's
+         O(dphi^2) model bias (round-15 numerical) */
       float t0 = 0.0, t1 = 1.0, y0 = yPrev, y1 = yCur;
       float f = coplanar ? 0.5 : y0/(y0-y1);   /* coplanar: y≡0 — sample the
           step midpoint (0/0 would NaN the secant) */
@@ -445,6 +428,32 @@ vec3 trace(vec2 ndc){
     }
 
 
+    /* horizon capture: uN past the horizon, or the integrator overshooting
+       u below zero while INBOUND (round-6). An OUTBOUND ray (w<0) can never
+       be captured. Runs AFTER the crossing test: a step that both crosses
+       the plane and ends captured still banks its emission (round-15). */
+    if(uN > 1.0/RS || (uN < 0.0 && wN > 0.0)){ done = true; continue; }
+    /* escaped outward — the uN<0 overshoot lands here now (wN<0) */
+    if(wN < 0.0 && uN < 1.0/sqrt(ESC_R2)){
+      /* interpolate the sphere crossing: far-field rays move nearly radially,
+         so the raw step endpoint overshoots the sphere by tens of rs and
+         quantizes the terminal sky direction into concentric rings (round-5).
+         Sky direction from STATIC-frame components: the coordinate slope
+         (w/u^2, 1/u) compresses the tangent by sqrt(f_esc) — a ~0.2 deg
+         astrometric bias on every lensed star, distinct from the 2M/r tail
+         and exactly fixable (round-15 GR audit). */
+      float uEsc = 1.0/sqrt(ESC_R2);
+      float f = clamp((u - uEsc)/max(u - uN, 1e-6), 0.0, 1.0);
+      float phiE = mix(phi, phiN, f);
+      float wE = mix(w, wN, f);
+      float fEsc = max(1.0 - RS*uEsc, 0.04);
+      vec3 er = cos(phiE)*e1 + sin(phiE)*e2;
+      vec3 ep = -sin(phiE)*e1 + cos(phiE)*e2;
+      vec3 vdir = normalize((-wE/(uEsc*uEsc))*er + (sqrt(fEsc)/uEsc)*ep);
+      col += T*skyColor(vdir);
+      done = true; continue;
+    }
+
     u = uN; w = wN; phi = phiN;
     /* bound the sin/cos argument: winding orbits accumulate ~500 rad by
        MAX_STEPS and fp32 argument reduction past ~400 is driver-dependent
@@ -475,7 +484,7 @@ vec3 trace(vec2 ndc){
       /* w>0 with u<uPh: the ray would turn after budget death — the radial
          term points INTO the hole; sample the sky along the pure tangent
          instead (round-4 GR audit) */
-      vec3 vd = w < 0.0 ? normalize((-w/(u*u))*er + (1.0/u)*ep) : ep;
+      vec3 vd = w < 0.0 ? normalize((-w/(u*u))*er + (sqrt(max(1.0-RS/u, 0.04))/u)*ep) : ep;
       col += T*skyColor(vd);
     }
   }

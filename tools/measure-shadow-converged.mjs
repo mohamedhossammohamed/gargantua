@@ -109,7 +109,7 @@ async function measure(presses, label, lensOff){
   const d = res.camDist;
   const sinT = lensOff ? (1/d) : (BC*Math.sqrt(Math.max(0,1-1/d))/d);
   const predR = Math.tan(Math.asin(sinT))/T * (res.h/2);
-  console.log(`${label}: R=${res.med.toFixed(1)}px pred=${predR.toFixed(1)} err=${(100*(res.med-predR)/predR).toFixed(2)}%  n=${res.n}/24 range=[${res.min.toFixed(1)},${res.max.toFixed(1)}] interiorMax=${res.interiorMax.toFixed(0)} d=${d.toFixed(2)}`);
+  console.log(`${label}: R=${res.med.toFixed(1)}px pred=${predR.toFixed(1)} err=${(100*(res.med-predR)/predR).toFixed(2)}%  n=${res.n}/48 range=[${res.min.toFixed(1)},${res.max.toFixed(1)}] interiorMax=${res.interiorMax.toFixed(0)} d=${d.toFixed(2)}`);
   return { label, ...res, predR };
 }
 

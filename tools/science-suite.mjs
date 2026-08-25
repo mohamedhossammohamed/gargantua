@@ -111,14 +111,16 @@ console.log('3. Binet invariant w^2 + u^2 - rs*u^3 = 1/b^2');
     if(r.maxInvDrift > worst){ worst = r.maxInvDrift; worstCtx = `b=${b.toFixed(3)} in ${st} steps`; }
     if(rel > worstRel) worstRel = rel;
   }
+  const sameB = integrate(B_CRIT*1.0001, 13.62, 0.7, 4000, true).maxInvDrift;
   const half = integrate(B_CRIT*1.0001, 13.62, 0.35, 8000, true).maxInvDrift;
   /* RK4 global invariant error ~ steps*dt^4: halving dt at doubled steps
      predicts an 8-16x cut — the gate demands the theoretical minimum (8x),
-     not half of it (round-14: the old >4x bar accepted order-2 schemes) */
+     and compares SAME-b runs (round-15: the old gate compared one b's half-dt
+     drift against the worst over heterogeneous b — a 1000x spread) */
   check('invariant drift < 1e-6 absolute', worst < 1e-6, `max ${worst.toExponential(2)} (${worstCtx})`);
   check('relative drift < 1e-4', worstRel < 1e-4, `max relative ${worstRel.toExponential(2)}`);
-  check('drift scales ~dt^4 (>=8x at half dt)', half < worst*0.125,
-        `half-dt drift ${half.toExponential(2)} vs ${worst.toExponential(2)}`);
+  check('drift scales ~dt^4 (>=8x at half dt, same b)', half < sameB*0.125,
+        `half-dt ${half.toExponential(2)} vs same-b dt0.7 ${sameB.toExponential(2)}`);
 }
 /* 3b. azimuthal PHASE error on ring substructure — dt varied at FIXED step
    budget (round-14: the old gate changed dt AND budget together, conflating
@@ -231,6 +233,9 @@ console.log('8. grazing-filter mean-emission anchor');
              l(l(hash13(ix,iy,iz+1), hash13(ix+1,iy,iz+1), ux),
                l(hash13(ix,iy+1,iz+1), hash13(ix+1,iy+1,iz+1), ux), uy), uz);
   }
+  /* GLSL mat3(...) constructors are COLUMN-major: the JS rows below are the
+     TRANSPOSE of the shader's ROT (round-15 diagnostician) — required so the
+     port integrates the same rotated field, not its inverse. */
   const ROT = [[0.36,0.48,-0.80],[-0.80,0.60,0.0],[0.48,0.64,0.60]];
   function fbm4(x, y, z){
     let s = 0, a = 0.5, p = [x, y, z];
@@ -238,9 +243,9 @@ console.log('8. grazing-filter mean-emission anchor');
       s += a*vnoise(p[0], p[1], p[2]);
       const q = p;
       p = [
-        (ROT[0][0]*q[0] + ROT[0][1]*q[1] + ROT[0][2]*q[2])*2.11 + 7.3,
-        (ROT[1][0]*q[0] + ROT[1][1]*q[1] + ROT[1][2]*q[2])*2.11 + 7.3,
-        (ROT[2][0]*q[0] + ROT[2][1]*q[1] + ROT[2][2]*q[2])*2.11 + 7.3,
+        (ROT[0][0]*q[0] + ROT[1][0]*q[1] + ROT[2][0]*q[2])*2.11 + 7.3,
+        (ROT[0][1]*q[0] + ROT[1][1]*q[1] + ROT[2][1]*q[2])*2.11 + 7.3,
+        (ROT[0][2]*q[0] + ROT[1][2]*q[1] + ROT[2][2]*q[2])*2.11 + 7.3,
       ];
       a *= 0.55;
     }
