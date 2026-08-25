@@ -167,7 +167,11 @@ vec4 diskSample(vec3 q, vec3 rayDir, float muDisk, float muPl){
      brightening the receding plunge band ~8x bolometric (round-4 emission
      audit); cinema keeps the guard to avoid dead-black bands */
   float gFloor = uScience > 0.5 ? 0.05 : 0.32;
-  float shift = clamp(mix(1.0, dopp*grav, uDoppler), gFloor, 1.95);
+  /* science ceiling 3.0: the physical shift in the plunge band reaches ~2.9 —
+     the old 1.95 ceiling clipped g^4 beaming from ~65 to ~14.5 there
+     (round-13 emission). Cinema keeps the tone guard. */
+  float gCeil = uScience > 0.5 ? 3.0 : 1.95;
+  float shift = clamp(mix(1.0, dopp*grav, uDoppler), gFloor, gCeil);
   /* I_obs = g^uBeamExp * I_em (4 = bolometric science, 3 = cinematic tone) */
   float boost = pow(shift, uBeamExp);
 
@@ -232,12 +236,12 @@ vec4 diskSample(vec3 q, vec3 rayDir, float muDisk, float muPl){
   dens *= env;
   if(dens < 0.004) return vec4(emis, alpha);
 
-  /* variance-shrink around the face-on mean (~0.10): the old value-fade let
-     E[smoothstep] collapse ~5-10% low at grazing incidence (the flattened n2
-     straddles the 0.52 threshold), systematically dimming the canonical
-     edge-on view. Shrinking fil toward its mean keeps mean emission exact at
-     every angle while the speckle variance dies (round-10 emission audit). */
-  float fil = 0.10 + (smoothstep(0.52, 0.88, n2) - 0.10)*graze;
+  /* variance-shrink around the face-on mean: E[smoothstep(0.52,0.88,fbm4)]
+     = 0.0804, measured from a fp64 port of the shipped noise fields
+     (science-suite test 8, n=2e5) — the old hand-asserted 0.10 biased edge-on
+     filament emission ~20%. Shrinking fil toward its measured mean keeps mean
+     emission angle-independent while the speckle variance dies. */
+  float fil = 0.080 + (smoothstep(0.52, 0.88, n2) - 0.080)*graze;
 
   float temp;
   vec3 bodyCol;
@@ -316,7 +320,8 @@ vec3 trace(vec2 ndc){
     vec3 p = p0; vec3 v = rd;
     for(int i=0;i<300;i++){
       vec3 np = p + v*0.35;
-      if(p.y*np.y < 0.0){
+      if(p.y*np.y < 0.0 || abs(v.y) < 1e-9){   /* coplanar straight rays live
+           in the disk — sample every step (round-13, mirrors the geodesic fix) */
         float f = p.y/(p.y-np.y);
         vec3 hp = mix(p,np,f);
         float hr = length(hp.xz);
@@ -349,6 +354,11 @@ vec3 trace(vec2 ndc){
     if(i >= uSteps || done) break;
 
     float yPrev = (1.0/u)*( cos(phi)*e1.y + sin(phi)*e2.y );
+    /* coplanar framing (camera elevation exactly 0): y ≡ 0, the strict sign
+       change never fires, and the disk vanishes. A ray confined to the disk
+       plane is INSIDE the disk — sample every step (round-13: the audit
+       claimed this was handled when it wasn't; now it is). */
+    bool coplanar = abs(e1.y) + abs(e2.y) < 1e-9;
 
     /* adaptive phi-step: fine near the photon sphere (u~2/3) so winding
        orbits get the budget. Cap 1.0 — larger far-field steps quantize the
@@ -389,11 +399,12 @@ vec3 trace(vec2 ndc){
 
     /* disk plane crossing between (u,phi) and (uN,phiN) */
     float yCur = (1.0/uN)*( cos(phiN)*e1.y + sin(phiN)*e2.y );
-    if(yPrev*yCur < 0.0){
+    if(yPrev*yCur < 0.0 || coplanar){
       /* secant-refined crossing: two iterations pin the plane hit to
          sub-step precision (single linear interp jittered thin arcs) */
       float t0 = 0.0, t1 = 1.0, y0 = yPrev, y1 = yCur;
-      float f = y0/(y0-y1);
+      float f = coplanar ? 0.5 : y0/(y0-y1);   /* coplanar: y≡0 — sample the
+          step midpoint (0/0 would NaN the secant) */
       for(int k=0;k<2;k++){
         float um = mix(u, uN, f);
         float ym = (1.0/um)*(cos(mix(phi,phiN,f))*e1.y + sin(mix(phi,phiN,f))*e2.y);
@@ -419,9 +430,12 @@ vec3 trace(vec2 ndc){
            k*b*u*sqrt(f), sign from the flow-vs-photon alignment */
         float fEm = max(1.0-RS/rH, 0.04);
         float aR = dot(er, marchDir), aT = dot(ep, marchDir);
-        float aL = sqrt(max(fEm*aR*aR + aT*aT, 1e-12));
+        /* static-frame radial leg DIVIDES by sqrt(f): n_r' = aR/√(aR²+f·aT²).
+           Round-13: the √f-numerator form was sign-inverted AND mis-weighted —
+           infalling gas rendered blue where GR demands red. Physical check:
+           infaller recedes from the escaping photon ⇒ mu < 0 ⇒ redshift. */
+        float muPl = aR/sqrt(max(aR*aR + fEm*aT*aT, 1e-12));
         float muDisk = sign(dot(vec3(-q.z,0.0,q.x)/max(hr,1e-4), -marchDir))*kDisk*b*uH*sqrt(fEm);
-        float muPl = -sqrt(fEm)*aR/aL;   /* radial free-fall emitter: v = -q_hat */
         vec4 ds = diskSample(q, marchDir, muDisk, muPl);
         col += T*ds.rgb;
         T *= 1.0-ds.a;
@@ -431,6 +445,10 @@ vec3 trace(vec2 ndc){
 
 
     u = uN; w = wN; phi = phiN;
+    /* bound the sin/cos argument: winding orbits accumulate ~500 rad by
+       MAX_STEPS and fp32 argument reduction past ~400 is driver-dependent
+       (round-13 numerical). mod is exact for the trig uses below. */
+    phi = mod(phi, 6.283185307179586);
   }
 
   if(!done && T > 0.01){

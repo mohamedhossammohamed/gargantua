@@ -194,5 +194,55 @@ console.log('7. shipped constants vs closed forms');
         `uFlow = ${U_FLOW}, sqrt(M) = ${Math.sqrt(M).toFixed(6)}`);
 }
 
+/* 8. grazing-filter anchor: E[smoothstep(0.52,0.88,fbm4)] measured from a
+   fp64 port of the shipped noise fields (the MEAN is fp32-stable; individual
+   hashes are not — this calibrates the constant the shader freezes to). */
+console.log('8. grazing-filter mean-emission anchor');
+{
+  const fract = x => x - Math.floor(x);
+  function hash13(px, py, pz){
+    px = fract(px*0.1031); py = fract(py*0.1031); pz = fract(pz*0.1031);
+    const d = px*(pz+31.32) + py*(py+31.32) + pz*(px+31.32);
+    px += d; py += d; pz += d;
+    return fract((px+py)*pz);
+  }
+  function vnoise(x, y, z){
+    const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+    const fx = x-ix, fy = y-iy, fz = z-iz;
+    const ux = fx*fx*(3-2*fx), uy = fy*fy*(3-2*fy), uz = fz*fz*(3-2*fz);
+    const l = (a, b, t) => a + (b-a)*t;
+    return l(l(l(hash13(ix,iy,iz), hash13(ix+1,iy,iz), ux),
+               l(hash13(ix,iy+1,iz), hash13(ix+1,iy+1,iz), ux), uy),
+             l(l(hash13(ix,iy,iz+1), hash13(ix+1,iy,iz+1), ux),
+               l(hash13(ix,iy+1,iz+1), hash13(ix+1,iy+1,iz+1), ux), uy), uz);
+  }
+  const ROT = [[0.36,0.48,-0.80],[-0.80,0.60,0.0],[0.48,0.64,0.60]];
+  function fbm4(x, y, z){
+    let s = 0, a = 0.5, p = [x, y, z];
+    for(let i = 0; i < 4; i++){
+      s += a*vnoise(p[0], p[1], p[2]);
+      const q = p;
+      p = [
+        (ROT[0][0]*q[0] + ROT[0][1]*q[1] + ROT[0][2]*q[2])*2.11 + 7.3,
+        (ROT[1][0]*q[0] + ROT[1][1]*q[1] + ROT[1][2]*q[2])*2.11 + 7.3,
+        (ROT[2][0]*q[0] + ROT[2][1]*q[1] + ROT[2][2]*q[2])*2.11 + 7.3,
+      ];
+      a *= 0.55;
+    }
+    return s;
+  }
+  const sstep = x => { const t = Math.min(1, Math.max(0, (x-0.52)/0.36)); return t*t*(3-2*t); };
+  let acc = 0, N = 200000;
+  for(let i = 0; i < N; i++){
+    const r = 3.0 + 8.0*((i*2654435761 >>> 0)/4294967296);
+    const ph = 2*Math.PI*(((i*40503 >>> 0)%1000)/1000);
+    acc += sstep(fbm4(Math.cos(ph)*2.9+9.4, Math.sin(ph)*2.9, Math.log(r)*8.8));
+  }
+  const anchor = acc/N;
+  const anchorSrc = parseFloat((shaderSrc.match(/float fil = ([0-9.]+) \+/) || [])[1]);
+  check('fil anchor matches measured E[smoothstep]', Math.abs(anchorSrc - anchor) < 0.005,
+        `measured E = ${anchor.toFixed(4)}, shader anchor = ${anchorSrc} (n=${N})`);
+}
+
 console.log(failures === 0 ? '\nSCIENCE SUITE: ALL GREEN' : `\nSCIENCE SUITE: ${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
