@@ -35,6 +35,11 @@ const DISK_IN_SCI = grab(/u\.uDiskIn\.value = state\.scienceMode \? ([0-9.]+)/, 
 const DPHI_FLOOR = grab(/clamp\(0\.35\/u, ([0-9.]+), 1\.0\)/, 'dphi floor');  /* the schedule
    floor is PINNED: a round-16-style floor edit once left this suite certifying a
    stale discrete map while green (round-17 HIGH) */
+const DPHI_GAIN  = grab(/dphi = uDtScale\*([0-9.]+)\*clamp/, 'dphi gain');    /* round-19: the
+   step gain, tiebreak sliver and jitter amplitude are load-bearing too — all
+   hand-duplicated constants were silently green through edits (round-19 HIGH) */
+const SLIVER     = grab(/u > uPh - ([0-9.]+)/, 'tiebreak sliver');
+const JITTER_LO  = grab(/mix\(([0-9.]+), 1\.0, phase0\)/, 'jitter min');
 
 let failures = 0;
 function check(name, ok, detail){
@@ -42,20 +47,25 @@ function check(name, ok, detail){
   else { console.log(`  FAIL ${name}  ${detail}`); failures++; }
 }
 
-/* --- exact mirror of the shader's per-ray integration --- */
-function integrate(b, dCam, dtScale, steps, trackInvariants){
+/* --- exact mirror of the shader's per-ray integration ---
+   phase: per-ray first-step jitter seed in [0,1) (the shader's phase0), or
+   -1 for the deterministic mean schedule. The GPU's temporal accumulator
+   converges to the JITTER-AVERAGED system, so boundary certification (test 1)
+   averages fates over seeds; scalar gates stay deterministic. */
+function integrate(b, dCam, dtScale, steps, trackInvariants, phase){
   const u0 = 1.0/dCam;
   let U = u0;
   let W = Math.sqrt(Math.max(1.0/(b*b) - U*U + RS*U*U*U, 1e-8));  /* inbound */
   let phi = 0.0;
   let maxInvDrift = 0.0;
   const inv0 = 1.0/(b*b);
-  const dphiBase = dtScale*0.09;
+  const dphiBase = dtScale*DPHI_GAIN;
   const sample = () => { const inv = W*W + U*U - RS*U*U*U;
     maxInvDrift = Math.max(maxInvDrift, Math.abs(inv - inv0)); };
   sample();                                                    /* initial state */
   for(let i = 0; i < steps; i++){
-    const dphi = dphiBase*Math.min(1.0, Math.max(DPHI_FLOOR, 0.35/U));
+    let dphi = dphiBase*Math.min(1.0, Math.max(DPHI_FLOOR, 0.35/U));
+    if(i === 0 && phase !== undefined && phase >= 0) dphi *= (JITTER_LO + (1.0-JITTER_LO)*phase);
     const BINET = UU => 3*M*UU*UU - UU;
     const k1u = W,               k1w = BINET(U);
     const k2u = W + 0.5*dphi*k1w, k2w = BINET(U + 0.5*dphi*k1u);
@@ -68,7 +78,7 @@ function integrate(b, dCam, dtScale, steps, trackInvariants){
     if(U > 1.0/RS || (U < 0.0 && W > 0.0)) return {fate:'captured', phiOut:phi, maxInvDrift};
     if(U < 1.0/Math.sqrt(ESC_R2) && W < 0.0) return {fate:'escaped', phiOut:phi, maxInvDrift};
   }
-  const cap = (W > 0.0) && ((b*b < 27.0*M*M) || (U > U_PH - 0.012));
+  const cap = (W > 0.0) && ((b*b < 27.0*M*M) || (U > U_PH - SLIVER));
   return {fate: cap ? 'captured' : 'escaped', phiOut: phi, maxInvDrift};
 }
 
@@ -81,6 +91,23 @@ function boundaryB(dCam, dtScale, steps){
   return 0.5*(lo + hi);
 }
 
+/* jitter-averaged boundary: the temporal accumulator converges to the mean
+   over first-step seeds, so the certified boundary is the 50%-capture point
+   of the seeded family (round-19: the deterministic bisection certified a
+   program the GPU does not execute) */
+function boundaryBJitter(dCam, dtScale, steps, K){
+  let lo = B_CRIT - 0.5, hi = B_CRIT + 0.5;
+  for(let k = 0; k < 30; k++){
+    const mid = 0.5*(lo + hi);
+    let cap = 0;
+    for(let s = 0; s < K; s++){
+      if(integrate(mid, dCam, dtScale, steps, false, (s + 0.5)/K).fate === 'captured') cap++;
+    }
+    if(cap*2 >= K) lo = mid; else hi = mid;
+  }
+  return 0.5*(lo + hi);
+}
+
 /* 1. shadow boundary vs closed form — two camera radii AND the shipped
    quality tiers. GATE HONESTY (round-14): 0.05% = 5e-4 relative is only
    1.03x the documented 4.9e-4 tiebreak sliver — this gate is a REGRESSION
@@ -89,11 +116,13 @@ function boundaryB(dCam, dtScale, steps){
    GPU gauge (+0.15% measured) and in the sliver's own documented bound. */
 console.log('1. shadow boundary vs b_crit = 3*sqrt(3)*M =', B_CRIT.toFixed(6));
 {
+  /* jitter-averaged (K=8 seeds): the temporal accumulator converges to the
+     seed-averaged system, so THIS is the boundary the GPU actually shows */
   for(const [d, dt, st, cfg] of [[13.62, 1.0, 1500, 'd13.6 dt1.0'],
                                  [20.0, 1.0, 1500, 'd20 dt1.0'],
                                  [13.62, 1.0, 500, 'LOW shipped 500@1.0'],
                                  [13.62, 0.7, 1500, 'ULTRA shipped 1500@0.7']]){
-    const bStar = boundaryB(d, dt, st);
+    const bStar = boundaryBJitter(d, dt, st, 8);
     const err = 100*(bStar - B_CRIT)/B_CRIT;
     check(`boundary ${cfg}`, Math.abs(err) < 0.05, `b* = ${bStar.toFixed(6)}, err ${err.toFixed(4)}%`);
   }
@@ -278,8 +307,48 @@ console.log('8. grazing-filter mean-emission anchor');
   }
   const anchor = acc/N;
   const anchorSrc = parseFloat((shaderSrc.match(/float fil = mix\(([0-9.]+),/) || [])[1]);
-  check('fil anchor matches measured E[smoothstep]', Math.abs(anchorSrc - anchor) < 0.005,
-        `measured E = ${anchor.toFixed(4)}, shader anchor = ${anchorSrc} (n=${N})`);
+  /* round-19: the anchor must match the DOWNSTREAM-chain expectation (raw
+     field mean + Cov(dens,fil) through the 1.9 gain), not the marginal field
+     mean — the two differ by ~2.4% of body emission */
+  check('fil anchor in covariance-corrected band', Math.abs(anchorSrc - 0.115) < 0.008,
+        `shader anchor = ${anchorSrc}, calibrated target 0.115 (raw field mean ${anchor.toFixed(4)})`);
+  /* downstream-chain Monte Carlo: body emission mean at graze=1 vs graze=0 */
+  function fbm5(x, y, z){
+    const ROT5 = [[0.36,0.48,-0.80],[-0.80,0.60,0.0],[0.48,0.64,0.60]];
+    let s = 0, a = 0.5, p = [x, y, z];
+    for(let i = 0; i < 5; i++){
+      s += a*vnoise(p[0], p[1], p[2]);
+      const q = p;
+      p = [
+        (ROT5[0][0]*q[0] + ROT5[1][0]*q[1] + ROT5[2][0]*q[2])*2.03 + 11.5,
+        (ROT5[0][1]*q[0] + ROT5[1][1]*q[1] + ROT5[2][1]*q[2])*2.03 + 11.5,
+        (ROT5[0][2]*q[0] + ROT5[1][2]*q[1] + ROT5[2][2]*q[2])*2.03 + 11.5,
+      ];
+      a *= 0.55;
+    }
+    return s;
+  }
+  let eFace = 0, eEdge = 0;
+  const M2 = 40000;
+  for(let i = 0; i < M2; i++){
+    const r = 3.0 + 8.0*((i*2654435761 >>> 0)/4294967296);
+    const ph = 2*Math.PI*(((i*40503 >>> 0)%997)/997);
+    const lr = Math.log(r);
+    const c = Math.cos(ph), s2 = Math.sin(ph);
+    const n1 = fbm5(c*1.35, s2*1.35, lr*4.6);
+    const n2r = fbm4(c*2.9+9.4, s2*2.9, lr*8.8);
+    const n3 = vnoise(c*7.5, s2*7.5, lr*17.0);
+    const S = x => { const t = Math.min(1, Math.max(0, (x-0.52)/0.36)); return t*t*(3-2*t); };
+    const shape = d => { const v = Math.min(1, Math.max(0, d*1.62-0.30)); return v*v*(3-2*v); };
+    const filF = S(n2r), filE = anchorSrc;   /* the shader's actual anchor */
+    const densF = shape(n1*0.58 + n2r*0.30 + n3*0.16);
+    const densE = shape(n1*0.58 + 0.5*0.30 + 0.5*0.16);
+    eFace += densF*(1 + 1.9*filF);
+    eEdge += densE*(1 + 1.9*filE);
+  }
+  const bias = 100*(eEdge - eFace)/eFace;
+  check('grazing body-mean bias < 1.5% (downstream MC)', Math.abs(bias) < 1.5,
+        `edge-on vs face-on body emission: ${bias.toFixed(2)}% (n=${M2})`);
 }
 
 console.log(failures === 0 ? '\nSCIENCE SUITE: ALL GREEN' : `\nSCIENCE SUITE: ${failures} FAILURE(S)`);

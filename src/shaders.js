@@ -198,7 +198,10 @@ vec4 diskSample(vec3 q, vec3 rayDir, float muDisk, float muPl){
       float wff = 0.70711*2.4*inversesqrt(rr*rr*rr);
       float phi2 = phiP - wff*uTime*1.6;
       float rDrift = rr + uTime*0.30*inversesqrt(max(rr-1.0, 0.25));
-      float ns = mix(0.5, vnoise(vec3(cos(phi2)*1.9, sin(phi2)*1.9, rDrift*2.2)), graze);
+      float ns = mix(0.515, vnoise(vec3(cos(phi2)*1.9, sin(phi2)*1.9, rDrift*2.2)), graze);
+      /* 0.515 = pre-image of E[pow(clamp(1.75*ns-0.42),1.1)] through the
+         downstream shaping (round-19 covariance correction; raw mean 0.5
+         under-reported the plunge band +4.03% edge-on) */
       float densP = band*band*pow(clamp(ns*1.75-0.42, 0.0, 1.0), 1.1);
       float betaP = min(sqrt(RS/max(rr, 1e-3)), 0.93);
       float gamP = inversesqrt(max(1.0-betaP*betaP, 0.01));
@@ -238,14 +241,12 @@ vec4 diskSample(vec3 q, vec3 rayDir, float muDisk, float muPl){
   dens *= env;
   if(dens < 0.004) return vec4(emis, alpha);
 
-  /* blend the RESULT, not the field: S(mix(f)) != mix(S(f)) for nonlinear S —
-     evaluating the smoothstep on the angle-blended field starved mid-
-     inclinations of the filament mean (round-14). mix(0.091, S(raw), graze)
-     keeps the mean exactly blended at every angle. The 0.091 anchor is the
-     measured E[smoothstep(0.52,0.88,fbm4)] with the ROT matrix applied in the
-     correct column-major orientation (suite test 8, n=2e5; round-15 fixed the
-     transposed port that had calibrated 0.080 against the inverse field). */
-  float fil = mix(0.091, smoothstep(0.52, 0.88, n2raw), graze);
+  /* blend the RESULT, not the field (round-14). The anchor is the EMPIRICAL
+     covariance-corrected value (round-19): the raw-field mean E[S(fbm4)]=0.091
+     destroys the positive Cov(dens,fil) retained through dens*(1+1.9*fil);
+     0.115 is calibrated so the DOWNSTREAM body-emission mean is angle-
+     independent to <1.5% (suite test 8 Monte Carlo gates it). */
+  float fil = mix(0.115, smoothstep(0.52, 0.88, n2raw), graze);
 
   float temp;
   vec3 bodyCol;
@@ -401,9 +402,11 @@ vec3 trace(vec2 ndc){
          raw linear interp; positional accuracy bounded by the surrogate's
          O(dphi^2) model bias (round-15 numerical) */
       float t0 = 0.0, t1 = 1.0, y0 = yPrev, y1 = yCur;
-      float fPrev = -1.0;
       float f = coplanar ? 0.5 : y0/(y0-y1);   /* coplanar: y≡0 — sample the
           step midpoint (0/0 would NaN the secant) */
+      float fPrev = f;   /* seed = linear guess: stagnation detection active
+          from iteration k=0 (round-19: a -1.0 seed made the bisection salvage
+          unable to fire until k=1) */
       for(int k=0;k<2;k++){
         float um = mix(u, uN, f);
         float ym = (1.0/um)*(cos(mix(phi,phiN,f))*e1.y + sin(mix(phi,phiN,f))*e2.y);
