@@ -455,7 +455,11 @@ vec3 trace(vec2 ndc){
          astrometric bias on every lensed star, distinct from the 2M/r tail
          and exactly fixable (round-15 GR audit). */
       float uEsc = 1.0/sqrt(ESC_R2);
-      float f = clamp((u - uEsc)/max(u - uN, 1e-6), 0.0, 1.0);
+      /* a step STARTING inside the sphere (turning outside it — b >~ 65, live
+         only for wide-angle/pulled-back cameras) must take the POST-step state:
+         f=0 would anchor the crossing at the inbound step-start state and tilt
+         vdir back toward the hole (round-17 numerical) */
+      float f = (u < uEsc) ? 1.0 : clamp((u - uEsc)/max(u - uN, 1e-6), 0.0, 1.0);
       float phiE = mix(phi, phiN, f);
       float wE = mix(w, wN, f);
       float fEsc = max(1.0 - RS*uEsc, 0.04);

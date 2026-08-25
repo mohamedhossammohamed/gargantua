@@ -26,6 +26,9 @@ const B_CRIT    = 3*Math.sqrt(3)*M;
 const U_PH      = 1.0/(3.0*M);
 const U_FLOW    = grab(/u\.uFlow\.value = ([0-9.]+)/, 'uFlow');           /* main.js upload */
 const DISK_IN_SCI = grab(/u\.uDiskIn\.value = state\.scienceMode \? ([0-9.]+)/, 'uDiskIn');
+const DPHI_FLOOR = grab(/clamp\(0\.35\/u, ([0-9.]+), 1\.0\)/, 'dphi floor');  /* the schedule
+   floor is PINNED: a round-16-style floor edit once left this suite certifying a
+   stale discrete map while green (round-17 HIGH) */
 
 let failures = 0;
 function check(name, ok, detail){
@@ -46,7 +49,7 @@ function integrate(b, dCam, dtScale, steps, trackInvariants){
     maxInvDrift = Math.max(maxInvDrift, Math.abs(inv - inv0)); };
   sample();                                                    /* initial state */
   for(let i = 0; i < steps; i++){
-    const dphi = dphiBase*Math.min(1.0, Math.max(0.6, 0.35/U));
+    const dphi = dphiBase*Math.min(1.0, Math.max(DPHI_FLOOR, 0.35/U));
     const BINET = UU => 3*M*UU*UU - UU;
     const k1u = W,               k1w = BINET(U);
     const k2u = W + 0.5*dphi*k1w, k2w = BINET(U + 0.5*dphi*k1u);
@@ -89,11 +92,13 @@ console.log('1. shadow boundary vs b_crit = 3*sqrt(3)*M =', B_CRIT.toFixed(6));
     check(`boundary ${cfg}`, Math.abs(err) < 0.05, `b* = ${bStar.toFixed(6)}, err ${err.toFixed(4)}%`);
   }
 }
-/* 2. RK4 convergence: the ORDER is gated, not just monotone decrease */
-console.log('2. RK4 convergence — order gated to [3.5, 4.5]');
+/* 2. RK4 convergence: order gated, TOTAL PHI HELD CONSTANT across the ladder
+   (steps ∝ 1/dt — round-17: fixed steps shrank the winding budget with dt,
+   conflating truncation order with separatrix amplification) */
+console.log('2. RK4 convergence — order gated to [3.5, 4.5], constant phi budget');
 {
-  const d = 13.62, steps = 6000;
-  const errs = [1.0, 0.5, 0.25].map(dt => boundaryB(d, dt, steps) - B_CRIT);
+  const d = 13.62, base = 6000;
+  const errs = [1.0, 0.5, 0.25].map(dt => boundaryB(d, dt, Math.ceil(base/dt)) - B_CRIT);
   const p = Math.log2(Math.abs(errs[0]/errs[1]));
   const p2 = Math.log2(Math.abs(errs[1]/errs[2]));
   check('measured order is 4th', p > 3.5 && p < 4.5 && p2 > 3.5 && p2 < 4.5,
@@ -115,14 +120,14 @@ console.log('3. Binet invariant w^2 + u^2 - rs*u^3 = 1/b^2');
   const half = integrate(B_CRIT*1.0001, 13.62, 0.35, 8000, true).maxInvDrift;
   const lowTier = integrate(2.0, 13.62, 1.0, 500, true).maxInvDrift;   /* LOW ships
      500@dt1.0 — its drift was never suite-tested until round-16 */
-  /* RK4 global invariant error ~ steps*dt^4: halving dt at DOUBLED steps
-     predicts exactly 8x (2·(1/2)^4) — the gate demands the full prediction.
-     (Round-16 rebuttal recorded: the reviewer's 16x figure omits the doubled
-     step count; 8x IS the h^4 prediction for this protocol.) */
+  /* RK4 global invariant error at FIXED total phi scales h^4 = 16x — the
+     protocol (dt 0.7/4000 vs 0.35/8000) holds total phi at 2800 rad, so the
+     reviewer's 16x is right and the round-16 "8x" rebuttal was wrong. The
+     gate keeps 8x as the conservative regression bar; measured is reported. */
   check('invariant drift < 1e-6 absolute', worst < 1e-6, `max ${worst.toExponential(2)} (${worstCtx})`);
   check('relative drift < 1e-4', worstRel < 1e-4, `max relative ${worstRel.toExponential(2)}`);
-  check('drift scales ~dt^4 (>=8x at half dt, same b)', half < sameB*0.125,
-        `half-dt ${half.toExponential(2)} vs same-b dt0.7 ${sameB.toExponential(2)}`);
+  check('drift scales ~h^4 (>=8x at half dt, same b, fixed phi)', half < sameB*0.125,
+        `half-dt ${half.toExponential(2)} vs same-b dt0.7 ${sameB.toExponential(2)} (16x predicted)`);
   check('LOW-tier drift < 1e-6', lowTier < 1e-6, `500@dt1.0 drift ${lowTier.toExponential(2)}`);
 }
 /* 3b. azimuthal PHASE error on ring substructure — dt varied at FIXED step
@@ -167,7 +172,7 @@ console.log('5. weak-field light bending (adaptive dt as shipped)');
     let W = Math.sqrt(Math.max(1/(b*b) - U*U + RS*U*U*U, 0));
     let phi = -Math.acos(Math.min(1, b/rStart));
     for(let i = 0; i < 60000; i++){
-      const dphi = (0.09*Math.min(1.0, Math.max(0.6, 0.35/U)))/dtDiv;  /* shipped schedule */
+      const dphi = (0.09*Math.min(1.0, Math.max(DPHI_FLOOR, 0.35/U)))/dtDiv;  /* shipped schedule */
       const k1u = W,               k1w = BINET(U);
       const k2u = W + 0.5*dphi*k1w, k2w = BINET(U + 0.5*dphi*k1u);
       const k3u = W + 0.5*dphi*k2w, k3w = BINET(U + 0.5*dphi*k2u);

@@ -73,9 +73,17 @@ provably 1.0.
 
 ## 4. Numerical characteristics (measured)
 
-- RK4 on Binet, adaptive dφ = dt·0.09·clamp(0.35/u, 0.6, 1).
-- Convergence: boundary error −1.85e-7 → −6.44e-10 (order gated 3.5–4.5).
-- Invariant drift ≤ 1.01e-7 (12 significant digits).
+- RK4 on Binet, dφ = dt·0.09·clamp(0.35/u, 0.35, 1) — the floor was lowered
+  from 0.6 in round 16 after the audit showed the old clamp saturated the
+  entire strong field (constant step for r < 1.71 rs) while claiming
+  refinement. The floor is PINNED from source in the suite (a schedule edit
+  now fails the suite — round-17 closed the stale-mirror hole).
+- Convergence: measured with total φ held constant across the ladder
+  (round-17: fixed-step ladders conflate truncation with winding budget).
+- Invariant drift ≤ 1.01e-7 absolute; drift-vs-dt scaling gated at the
+  theoretical 8× for the doubled-steps protocol (16× at fixed total φ —
+  the round-16 "8×" rebuttal of the reviewer's 16× was itself wrong and is
+  corrected here per round-17).
 - Shadow boundary: −0.0000% (fp64 mirror, two camera radii); +0.15% (GPU fp32
   end-to-end, scene space).
 - **Known, bounded systematics** (all documented, all invisible without an
