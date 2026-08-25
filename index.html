@@ -4529,7 +4529,13 @@ vec3 skyColor(vec3 d){
 }
 
 /* ---- accretion disk sample ---- */
-vec4 diskSample(vec3 q, vec3 rayDir){
+/* muDisk: static-frame cosine between the photon and the disk's azimuthal
+   flow \u2014 computed by the CALLER as sign\xB7k\xB7b\xB7u\xB7sqrt(f) (k = orbital/disk
+   dihedral): the round-10 in-function map does not commute with the dihedral
+   and under-beamed inclined views by up to 16% (round-12 hostile).
+   muPl: same for the plunge band's RADIAL free-fall emitter (round-11 bug:
+   it borrowed the azimuthal cosine, painting an orbital signature on infall). */
+vec4 diskSample(vec3 q, vec3 rayDir, float muDisk, float muPl){
   float rr = length(q.xz);
   float rin = uDiskIn;
   vec3 emis = vec3(0.0);
@@ -4539,19 +4545,8 @@ vec4 diskSample(vec3 q, vec3 rayDir){
      full static-observer g-factor sqrt[(1-rs/r_em)/(1-rs/r_obs)] */
   float gravObs = inversesqrt(max(1.0-RS/length(uCamPos), 1e-3));
   float beta = clamp(sqrt(0.5/max(rr-RS, 0.55)), 0.0, 0.80);
-  vec3 vd = vec3(-q.z, 0.0, q.x)/max(rr, 1e-4);
   float gam = inversesqrt(max(1.0-beta*beta, 0.01));
-  /* the plot tangent's dot product is NOT the static-frame cosine: the
-     orthonormal static frame weighs the radial leg by sqrt(f=1-rs/r), so the
-     true tangential cosine is b*sqrt(f)/r while the plot dot gives
-     b/sqrt(r^2+b^2*rs/r) \u2014 a ~+5%/-2% g error at the inner disk, ~+21%/-8%
-     after g^4 beaming (round-10 emission audit; round-7's revert of the
-     correction was itself wrong \u2014 re-derived from the tetrad, and the general
-     form sqrt(f)/sqrt(w^2 r^2 + f) collapses exactly to b*sqrt(f)/r). */
-  float muP = dot(vd, -rayDir);
-  float fEm = max(1.0-RS/rr, 0.04);
-  float mu = muP*sqrt(fEm/max(1.0 - muP*muP*(1.0-fEm), 1e-3));
-  float dopp = 1.0/(gam*(1.0-beta*mu));
+  float dopp = 1.0/(gam*(1.0-beta*muDisk));
   float grav = sqrt(max(1.0-RS/rr, 0.04))*gravObs;
   /* science mode keeps the physical deep redshift \u2014 the 0.32 tone floor was
      brightening the receding plunge band ~8x bolometric (round-4 emission
@@ -4585,11 +4580,9 @@ vec4 diskSample(vec3 q, vec3 rayDir){
       float rDrift = rr + uTime*0.30*inversesqrt(max(rr-1.0, 0.25));
       float ns = mix(0.5, vnoise(vec3(cos(phi2)*1.9, sin(phi2)*1.9, rDrift*2.2)), graze);
       float densP = band*band*pow(clamp(ns*1.75-0.42, 0.0, 1.0), 1.1);
-      float betaP = min(sqrt(RS/max(rr, 1e-3)), 0.80);
+      float betaP = min(sqrt(RS/max(rr, 1e-3)), 0.93);
       float gamP = inversesqrt(max(1.0-betaP*betaP, 0.01));
-      float muPp = dot(vd, -rayDir);
       float fP = max(1.0-RS/rr, 0.04);
-      float muPl = muPp*sqrt(fP/max(1.0 - muPp*muPp*(1.0-fP), 1e-3));
       float shiftP = clamp((1.0/(gamP*(1.0-betaP*muPl)))*sqrt(fP)*gravObs, gFloor, 1.95);
       vec3 pc = kelvinRGB(uTNorm*1e7*0.55*shiftP)*0.40;
       plunge += pc*densP*uGain*pow(shiftP, uBeamExp);
@@ -4689,6 +4682,10 @@ vec3 trace(vec2 ndc){
   float sinPsi = vt;                                 /* angle from radial */
   float b = (r0*sinPsi)*inversesqrt(max(1.0-RS/r0, 1e-4))*uLensing;
   float u  = 1.0/r0;
+  /* dihedral between the ray's orbital plane and the disk plane: the orbital
+     normal is unit (e1 \u22A5 e2), so its y-component IS the cosine. The static-
+     frame emitter cosines below are exact at any inclination only with it. */
+  float kDisk = abs(cross(e1, e2).y);
   /* w = du/dphi is POSITIVE only when the ray starts inward. Hardcoding +w
      integrated the phi-MIRRORED orbit for any outward-starting ray \u2014 phantom
      dive, phantom disk crossings (round-4 GR audit; dormant in centered
@@ -4708,8 +4705,14 @@ vec3 trace(vec2 ndc){
         float f = p.y/(p.y-np.y);
         vec3 hp = mix(p,np,f);
         float hr = length(hp.xz);
-        if(hr > uDiskIn*0.84 && hr < DISK_OUT){
-          vec4 ds = diskSample(hp, normalize(v));
+        float hrMin = uScience > 0.5 ? 1.15 : uDiskIn*0.84;   /* science admits the
+           plunge band \u2014 the cinema 0.84 ramp constant leaked into the science
+           window and silenced 80% of it (round-12 hostile) */
+        if(hr > hrMin && hr < DISK_OUT){
+          vec3 vn = normalize(v);
+          vec4 ds = diskSample(hp, vn,
+            dot(vec3(-hp.z,0.0,hp.x)/max(hr,1e-4), -vn),
+            dot(normalize(vec3(hp.x,0.0,hp.z)/max(hr,1e-4)), -vn));
           col += T*ds.rgb; T *= 1.0-ds.a;
           if(T < 0.004) return col;
         }
@@ -4790,12 +4793,21 @@ vec3 trace(vec2 ndc){
       float rH = 1.0/uH;
       vec3 q = rH*( cos(phiH)*e1 + sin(phiH)*e2 );
       float hr = length(q.xz);
-      if(hr > uDiskIn*0.84 && hr < DISK_OUT){
+      float hrMin = uScience > 0.5 ? 1.15 : uDiskIn*0.84;
+      if(hr > hrMin && hr < DISK_OUT){
         vec3 er = cos(phiH)*e1 + sin(phiH)*e2;
         vec3 ep = -sin(phiH)*e1 + cos(phiH)*e2;
         float wH = mix(w, wN, f);                    /* interpolated \u2014 step-start (u,w) is stale mid-step */
         vec3 marchDir = normalize((-wH/(uH*uH))*er + (1.0/uH)*ep);
-        vec4 ds = diskSample(q, marchDir);
+        /* static-frame emitter cosines, exact at ANY inclination: local-frame
+           components with the sqrt(f) radial leg; the azimuthal magnitude is
+           k*b*u*sqrt(f), sign from the flow-vs-photon alignment */
+        float fEm = max(1.0-RS/rH, 0.04);
+        float aR = dot(er, marchDir), aT = dot(ep, marchDir);
+        float aL = sqrt(max(fEm*aR*aR + aT*aT, 1e-12));
+        float muDisk = sign(dot(vec3(-q.z,0.0,q.x)/max(hr,1e-4), -marchDir))*kDisk*b*uH*sqrt(fEm);
+        float muPl = -sqrt(fEm)*aR/aL;   /* radial free-fall emitter: v = -q_hat */
+        vec4 ds = diskSample(q, marchDir, muDisk, muPl);
         col += T*ds.rgb;
         T *= 1.0-ds.a;
         if(T < 0.004){ done = true; continue; }
@@ -4813,9 +4825,10 @@ vec3 trace(vec2 ndc){
        starved budget dying far from the crest can no longer leak sky into
        the shadow (round-10 GR audit: the old u > u_Ph test was only sound
        when deaths happen near the crest). b > b_crit: the ray turns at
-       u_out < u_Ph and escapes \u2014 except the measure-tiny in-band sliver
-       b in (b_crit, b_crit+9e-4) whose tiebreak paints it captured,
-       inflating the shadow by db/b ~ 3.5e-4: accepted, documented. */
+       u_out < u_Ph and escapes \u2014 except the in-band tiebreak sliver:
+       u > uPh - 0.012 maps to db_crit ~ 1.26e-3, shadow inflation
+       db/b ~ 4.9e-4 (round-12 corrected the understated 9e-4/3.5e-4).
+       Accepted, documented. */
     float uPh = 1.0/(3.0*M);
     /* outbound photons ALWAYS escape: rdot^2 = 1 - b^2 u^2 (1-rs u) has no
        root for b < b_crit, so an outward sub-critical ray is unreachable

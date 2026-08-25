@@ -14,12 +14,12 @@ carries its error.
 | Event horizon | r = rs | exact (capture test) | interior luminance 0/255 in metro gauge |
 | Photon sphere | r = 1.5 rs | exact (u_Ph = 1/(3M)) | separatrix resolves at b_crit ± 1e-7; 3.1-orbit winding |
 | Shadow radius | b_crit = 3√3 GM/c² | **+0.15% measured, GPU end-to-end, scene space** | ?metro gauge (AA/accumulation/grain/pincushion off; bloom/ultra/HDR asserted) — this number is also the fp32 executed-arithmetic validation (the suite is fp64 source-level; the two chains agree, closing the float gap the round-11 audit flagged) |
-| ISCO | r = 6GM/c² = 3 rs | exact AND rendered as such: the science envelope opens at 0.97–1.03 rs·rin (round-11: the old soft ramp rendered emission from 2.5 rs — the "ISCO edge" was false as shown) | pinned from source in suite |
-| Plunging region | rendered between ISCO and horizon | **approximation, disclosed**: kinematics = free-fall from infinity (v = √(rs/r) local static; exact zero-angular-momentum infall — true ISCO-parity geodesics E = √(8/9) run slower here), full Doppler+gravitational g applied to BOTH chromaticity and amplitude (round-11 fix), turbulence pattern and its 2.4× pattern speed illustrative | code; this row is the disclosure |
+| ISCO | r = 6GM/c² = 3 rs | exact AND rendered as such: the science envelope opens at 0.97–1.03 rs·rin (round-11), and the sampling window admits the plunge band down to 1.15 rs (round-12: the cinema 0.84 ramp constant had leaked into the science window and silenced everything inside 2.52 rs) | pinned from source in suite |
+| Plunging region | rendered r ∈ [1.15, 2.94] rs | **approximation, disclosed**: kinematics = free-fall from infinity (v = √(rs/r) local static, clamped 0.93; exact zero-angular-momentum infall — true ISCO-parity geodesics run slower here); Doppler measured against the RADIAL direction (round-12: the azimuthal cosine painted an orbital signature on infall); full g on chromaticity and amplitude; fixed scalars disclosed: amplitude ×0.40, chromaticity ×0.55·T_max, pattern speed 2.4×Ω_K and density texture illustrative | code; this row is the disclosure |
 | Orbital motion | Ω_K = √(M/r³) | exact | pinned from main.js upload in suite |
 | Orbital velocity | β = √(M/(r−rs)) | **exact** — identical to the locally-measured circular-orbit speed | symbolic verification (round-3) |
 | SR Doppler | g = 1/[γ(1−β cosθ)] | exact; **science mode forces uDoppler = 1** (round-11: the film palette's 0.32 silently gutted it) | hostile audit finding, fixed |
-| Static-frame emission angle | cosθ = b·√f/r | exact (round-10 fix; round-7's revert was wrong — tetrad rederivation) | two independent auditor derivations |
+| Static-frame emission angle | cosθ = k·b·√f/r, k = cos(orbital/disk dihedral) | exact at any inclination (round-12: the round-10 coplanar form skipped k and under-beamed inclined views up to 16% — the nonlinear local-frame map does not commute with the dihedral) | hostile-audit numeric check + tetrad derivation |
 | Gravitational redshift | √(1−rs/r_em)/√(1−rs/r_obs) | exact for static emitter/observer | round-10 audit |
 | Beaming | I_obs = g⁴·I_em, applied exactly once (body AND plunge tracked separately — round-11 removed the plunge g⁸ reintroduction) | exact | round-11 audit finding, fixed |
 | Observed color | T_obs = g·T_em, Planck locus, sRGB→linear decoded; **science mode forces saturation = 1.0** (round-11: ember's 1.14 pushed chroma off-locus) | exact chromaticity path | hostile audit finding, fixed |
@@ -43,8 +43,15 @@ carries its error.
   approximation above.
 - **Coplanar degenerate framing**: at camera elevation exactly 0 the ray
   plane coincides with the disk plane and the sign-change crossing test
-  never fires — the disk thins to a line. Unreachable via the UI (graze
-  elevation 0.030) and demoted by jitter; documented, not fixed.
+  never fires. Handled since round 12 (the coplanar case samples the plane
+  every step — a ray confined to the disk IS always inside it).
+- **Known bounded sky-direction systematics** (star positions only; the
+  shadow is unaffected): budget-dead inbound near-critical rays sample the
+  sky along the tangent, discarding radian-scale remaining winding for the
+  tiny class that starves mid-flight at low budgets; grazing rays can cross
+  the plane twice within one step (odd/even crossing ambiguity, bounded by
+  the step cap); the escape-sphere tail (~0.9°) and the shipped-schedule
+  weak-field deflection (~0.011 rad) as quantified above.
 
 ## 3. Rendering approximations (visual, not physics)
 

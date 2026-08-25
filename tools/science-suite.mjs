@@ -72,13 +72,19 @@ function boundaryB(dCam, dtScale, steps){
   return 0.5*(lo + hi);
 }
 
-/* 1. shadow boundary vs closed form, at TWO camera radii */
+/* 1. shadow boundary vs closed form — two camera radii AND the shipped
+   quality tiers (round-12: certifying only non-shipped configs is theater).
+   Gate note: 0.05% is a RENDERING-GRADE regression bar, deliberately ~100x
+   the documented 4.9e-4 tiebreak sliver; it is not a metrology claim. */
 console.log('1. shadow boundary vs b_crit = 3*sqrt(3)*M =', B_CRIT.toFixed(6));
 {
-  for(const d of [13.62, 20.0]){
-    const bStar = boundaryB(d, 1.0, 1500);
+  for(const [d, dt, st, cfg] of [[13.62, 1.0, 1500, 'd13.6 dt1.0'],
+                                 [20.0, 1.0, 1500, 'd20 dt1.0'],
+                                 [13.62, 1.0, 500, 'LOW shipped 500@1.0'],
+                                 [13.62, 0.7, 1500, 'ULTRA shipped 1500@0.7']]){
+    const bStar = boundaryB(d, dt, st);
     const err = 100*(bStar - B_CRIT)/B_CRIT;
-    check(`boundary d=${d}`, Math.abs(err) < 0.05, `b* = ${bStar.toFixed(6)}, err ${err.toFixed(4)}%`);
+    check(`boundary ${cfg}`, Math.abs(err) < 0.05, `b* = ${bStar.toFixed(6)}, err ${err.toFixed(4)}%`);
   }
 }
 /* 2. RK4 convergence: the ORDER is gated, not just monotone decrease */
@@ -93,7 +99,7 @@ console.log('2. RK4 convergence — order gated to [3.5, 4.5]');
   check('error shrinks monotonically', Math.abs(errs[2]) < Math.abs(errs[1]) && Math.abs(errs[1]) < Math.abs(errs[0]),
         `e = ${errs.map(e => e.toExponential(2)).join(' -> ')}`);
 }
-/* 3. Binet invariant conservation */
+/* 3. Binet invariant conservation — with a dt-scaling confirmation */
 console.log('3. Binet invariant w^2 + u^2 - rs*u^3 = 1/b^2');
 {
   let worst = 0, worstCtx = '';
@@ -101,10 +107,22 @@ console.log('3. Binet invariant w^2 + u^2 - rs*u^3 = 1/b^2');
     const r = integrate(b, 13.62, 0.7, st, true);
     if(r.maxInvDrift > worst){ worst = r.maxInvDrift; worstCtx = `b=${b.toFixed(3)} in ${st} steps`; }
   }
-  /* RK4 global invariant error grows ~ steps*dt^4 — 1e-6 pins 12 digits and
-     sits one decade above the observed 1e-7 (round-11: thresholds documented,
-     not fitted silently) */
+  const half = integrate(B_CRIT*1.0001, 13.62, 0.35, 8000, true).maxInvDrift;
+  /* RK4 global invariant error ~ steps*dt^4: halving dt at doubled steps
+     should cut drift ~8-16x — the scaling is TESTED, not asserted */
   check('invariant drift < 1e-6', worst < 1e-6, `max ${worst.toExponential(2)} (${worstCtx})`);
+  check('drift scales ~dt^4 (dt 0.7->0.35)', half < worst*0.25,
+        `half-dt drift ${half.toExponential(2)} vs ${worst.toExponential(2)} (threshold pins ~6 digits on inv0~0.15, not 12)`);
+}
+/* 3b. azimuthal PHASE error on ring substructure (round-12: the suite gated
+   only the scalar boundary; near-critical winding phase was untested) */
+console.log('3b. near-critical azimuthal phase convergence');
+{
+  const fine = integrate(B_CRIT + 1e-5, 13.62, 0.7, 6000).phiOut;
+  const coarse = integrate(B_CRIT + 1e-5, 13.62, 1.0, 4000).phiOut;
+  const dPhi = Math.abs(coarse - fine);
+  check('winding phase converges < 0.15 rad', dPhi < 0.15,
+        `|phi(dt=1.0) - phi(dt=0.7,2x steps)| = ${dPhi.toFixed(4)} rad`);
 }
 /* 4. photon sphere: separatrix resolves; critical side winds */
 console.log('4. photon-sphere separatrix at b = b_crit');
