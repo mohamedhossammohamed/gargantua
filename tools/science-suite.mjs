@@ -7,6 +7,12 @@
    Scope note (round-11 audit): this certifies the SOURCE text in
    float64; the GPU's fp32 arithmetic is certified end-to-end by
    tools/measure-shadow-converged.mjs (+0.15% scene space).
+   Scope note (round-18): the shader jitters the FIRST step size
+   per ray (sub-dphi phase decorrelation of the shared crossing
+   grid — streak fix). The mirror integrates the jitter-free mean
+   schedule; the jitter's boundary effect is bounded by the
+   crossing refinement's own sub-step precision and averages out
+   under the temporal accumulator.
    ============================================================ */
 import fs from 'node:fs';
 

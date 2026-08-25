@@ -4411,6 +4411,14 @@ vec3 trace(vec2 ndc){
      dive, phantom disk crossings (round-4 GR audit; dormant in centered
      framings, live the moment the hole leaves frame-center). */
   float w  = (dot(rd,e1) < 0.0 ? 1.0 : -1.0)*sqrt(max(1.0/(b*b) - u*u + RS*u*u*u, 1e-8));
+  /* every ray otherwise marches the SAME phi grid (phi=0 origin, fixed dphi
+     schedule): crossing samples cluster on the shared grid and the disk's
+     bright compressed regions sprout straight radial streaks, one per grid
+     cell (round-18, B-matrix isolation: nolensing clean, lensed streaky).
+     The fix is a per-ray RANDOM FIRST-STEP SIZE (below) \u2014 decorrelating the
+     grid phase WITHOUT touching the phi origin, which is anchored to the
+     launch geometry: offsetting phi itself would rotate each orbit. */
+  float phase0 = hash13(vec3(ndc*913.7, 1.0));
   float phi = 0.0;
 
   vec3 col = vec3(0.0);
@@ -4469,6 +4477,7 @@ vec3 trace(vec2 ndc){
        Cap 1.0 \u2014 larger far-field steps quantize the terminal sky direction
        into visible rings (regression caught on S2). */
     float dphi = uDtScale*0.09*clamp(0.35/u, 0.35, 1.0);
+    if(i == 0) dphi *= mix(0.05, 1.0, phase0);   /* per-ray grid-phase jitter */
 
     /* RK4 step */
     float k1u = w,             k1w = BINET(u);
