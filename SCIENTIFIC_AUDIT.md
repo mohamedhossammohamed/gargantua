@@ -1,94 +1,101 @@
 # GARGANTUA — Living Scientific Audit
 
-Last full revision: round 10 of the adversarial sea. This document is the
-honesty ledger: what is exact, what is approximated, what is NOT implemented,
-and what the current largest scientific weakness is. It must be updated every
-iteration. Nothing here claims "100% exact" — every claim carries its error.
+Last full revision: round 11 of the adversarial sea (hostile falsification +
+numerical-analysis panel). This is the honesty ledger: what is exact, what is
+approximated, what is NOT implemented, and the current largest scientific
+weakness. Updated every iteration. No claim of "100% exact" — every claim
+carries its error.
 
 ## 1. Implemented physics — basis and verification status
 
 | Phenomenon | Governing theory | Status | Evidence |
 |---|---|---|---|
-| Null geodesics | Binet form of the exact Schwarzschild null orbit: u'' + u = 3Mu², RK4 | **Exact ODE, numerical solution** | science-suite: shadow boundary −0.000% vs b_crit; RK4 convergence ratio 17.2 ≈ 2⁴; Binet invariant conserved to 1e-7 over 1500 steps |
-| Event horizon | r = rs = 2GM/c² | exact (capture test u > 1/rs) | interior luminance 0/255 in metro gauge |
-| Photon sphere | r = 1.5 rs = 3GM/c² | exact (u_Ph = 1/(3M)) | separatrix resolves at b_crit ± 1e-7; near-critical rays wind 3.1 orbits |
-| Shadow radius | b_crit = 3√3 GM/c² | **measured +0.2% (scene space)** | headless gauge in ?metro mode (AA, accumulation, grain, pincushion all disabled; bloom-off asserted, tier/HDR asserted) |
-| ISCO | r = 6GM/c² = 3 rs | exact (science-mode inner edge) | pinned constant in suite |
-| Plunging region | streams between ISCO and horizon | rendered (qualitative) | visible in science graze shots; density model is illustrative, not a solution of the relativistic Euler equations |
-| Orbital motion | Ω_K = √(M/r³) (exact Schwarzschild coordinate frequency) | exact | pinned in suite (uFlow = 0.70711 = √M, r^-3/2 in shader) |
-| Orbital velocity | β = √(M/(r−rs)) | **exact** — algebraically identical to the locally-measured circular-orbit speed √(M/r)/√(1−rs/r) | verified symbolically (round-3) |
-| Special-relativistic Doppler | g = 1/[γ(1−β cosθ)] | exact SR formula | round-10 audit verified structure |
-| Static-frame emission angle | cosθ = b·√f/r, f = 1−rs/r | **exact** (round-10 fix; the plot-frame dot product over-beamed the approaching limb ~21% after g⁴) | tetrad derivation; two independent auditor derivations agree |
-| Gravitational redshift | √(1−rs/r_em)/√(1−rs/r_obs), static observers | exact for static observer/emitter | round-10 audit clean |
-| Relativistic beaming | I_obs = g⁴·I_em (bolometric), applied once | exact (round-7 removed a g⁸ double-count) | round-10 audit: "applied exactly once" |
-| Observed color | T_obs = g·T_em on the Planck locus | exact chromaticity mapping; Tanner–Helland sRGB fit decoded to linear (round-5; the fit itself drifts from the true Planck locus above ~4×10⁴ K — documented below) | round-10 audit domain-clean |
-| Disk temperature | Shakura–Sunyaev T(r) ∝ x^(−3/4)(1−√(rin/r))^(1/4), no-stress inner torque; peak x = 49/36, f = 0.4879 | exact profile shape | peak constant computed 0.48789 (round-10 audit) |
-| T_max normalization | Eddington: Ṁ = L_Edd/ηc², η = 1−√(8/9) → T_max = 8.6×10⁶ K at 10 M☉ | standard thin-disk estimate | derived in code comment; replaced a ~7× super-Eddington constant (round-2) |
-| Weak-field lensing | deflection → 4M/b + (15π/4)(M/b)² | **matches 2PN series** | science-suite test 5 |
-| Light-bending tail truncation | escape sphere r = 65 | documented systematic: ~0.9° under-deflection on escaped rays' sky directions (uniform, invisible without reference; does not affect shadow) | suite test 6 bounds it |
+| Null geodesics | Binet form of the exact Schwarzschild null orbit: u'' + u = 3Mu², RK4 | **Exact ODE, numerical solution** | suite: shadow boundary −0.0000% at two camera radii; convergence order gated to p ∈ [4.06, 4.11]; Binet invariant ≤ 1e-7 |
+| Event horizon | r = rs | exact (capture test) | interior luminance 0/255 in metro gauge |
+| Photon sphere | r = 1.5 rs | exact (u_Ph = 1/(3M)) | separatrix resolves at b_crit ± 1e-7; 3.1-orbit winding |
+| Shadow radius | b_crit = 3√3 GM/c² | **+0.15% measured, GPU end-to-end, scene space** | ?metro gauge (AA/accumulation/grain/pincushion off; bloom/ultra/HDR asserted) — this number is also the fp32 executed-arithmetic validation (the suite is fp64 source-level; the two chains agree, closing the float gap the round-11 audit flagged) |
+| ISCO | r = 6GM/c² = 3 rs | exact AND rendered as such: the science envelope opens at 0.97–1.03 rs·rin (round-11: the old soft ramp rendered emission from 2.5 rs — the "ISCO edge" was false as shown) | pinned from source in suite |
+| Plunging region | rendered between ISCO and horizon | **approximation, disclosed**: kinematics = free-fall from infinity (v = √(rs/r) local static; exact zero-angular-momentum infall — true ISCO-parity geodesics E = √(8/9) run slower here), full Doppler+gravitational g applied to BOTH chromaticity and amplitude (round-11 fix), turbulence pattern and its 2.4× pattern speed illustrative | code; this row is the disclosure |
+| Orbital motion | Ω_K = √(M/r³) | exact | pinned from main.js upload in suite |
+| Orbital velocity | β = √(M/(r−rs)) | **exact** — identical to the locally-measured circular-orbit speed | symbolic verification (round-3) |
+| SR Doppler | g = 1/[γ(1−β cosθ)] | exact; **science mode forces uDoppler = 1** (round-11: the film palette's 0.32 silently gutted it) | hostile audit finding, fixed |
+| Static-frame emission angle | cosθ = b·√f/r | exact (round-10 fix; round-7's revert was wrong — tetrad rederivation) | two independent auditor derivations |
+| Gravitational redshift | √(1−rs/r_em)/√(1−rs/r_obs) | exact for static emitter/observer | round-10 audit |
+| Beaming | I_obs = g⁴·I_em, applied exactly once (body AND plunge tracked separately — round-11 removed the plunge g⁸ reintroduction) | exact | round-11 audit finding, fixed |
+| Observed color | T_obs = g·T_em, Planck locus, sRGB→linear decoded; **science mode forces saturation = 1.0** (round-11: ember's 1.14 pushed chroma off-locus) | exact chromaticity path | hostile audit finding, fixed |
+| Disk temperature | Shakura–Sunyaev with no-stress inner torque; peak x = 49/36, f = 0.4879 | exact profile | peak computed 0.48789 |
+| T_max normalization | Eddington Ṁ = L_Edd/ηc², η = 1−√(8/9) → 8.6×10⁶ K at 10 M☉ | standard estimate | replaced a 7× super-Eddington constant (round-2) |
+| Weak-field lensing | 4M/b + (15π/4)(M/b)² | **matches 2PN to 0.78%** (residual = 3PN + finite r_start) | suite test 5 |
 
 ## 2. Explicit non-implementations (documented, not silent)
 
-- **Kerr geometry / spin / frame dragging / ergosphere: NOT implemented.**
-  The simulation is exact for the a = 0 (Schwarzschild) limit only. The
-  orbital-plane Binet formulation does not generalize to Kerr (no conserved
-  planar orbit); a Kerr tracer requires the full Hamiltonian formulation
-  with non-integrable trajectories — feasible in WebGL but a ground-up
-  rederivation with its own regression suite. Until then the renderer makes
-  no Kerr claims anywhere in its UI.
-- **Volumetric disk thickness: NOT implemented.** The disk is an infinitely
-  thin plane sampled at crossings. Edge-on optical depth is therefore
-  under-represented; the grazing filter is the documented mitigation.
-- **Disk emission is a turbulence model, not radiative transfer.** Density
-  fields are procedural fbm advected at Ω_K; the T(r)⁴ amplitude and the
-  g-factors are physical, but the opacity/scattering are illustrative.
-  Science mode keeps amplitudes and chromaticity physical; cinema mode is
-  explicitly artistic (labeled in-app).
-- **Plunging-region density** is procedural, not a solution of relativistic
-  hydrodynamics.
+- **Kerr / spin / frame dragging / ergosphere: NOT implemented.** Exact for
+  a = 0 only; no Kerr claims anywhere in the UI. A Kerr tracer needs the
+  full Hamiltonian formulation — the next high-impact improvement if
+  attempted, gated behind this suite's zero-spin pins.
+- **Volumetric disk: NOT implemented** — infinitely thin plane sampled at
+  crossings; the grazing filter is the documented mitigation.
+- **Disk emission is procedural turbulence, not radiative transfer.**
+  Amplitudes and chromaticity are physical in science mode; opacity and
+  scattering are illustrative.
+- **Plunge-band pattern speed (2.4× Ω_K) and density texture are
+  illustrative**; the kinematics/radiometry are the documented free-fall
+  approximation above.
+- **Coplanar degenerate framing**: at camera elevation exactly 0 the ray
+  plane coincides with the disk plane and the sign-change crossing test
+  never fires — the disk thins to a line. Unreachable via the UI (graze
+  elevation 0.030) and demoted by jitter; documented, not fixed.
 
 ## 3. Rendering approximations (visual, not physics)
 
-- 32-phase subpixel jitter + EMA temporal accumulation: presentation-layer
-  AA; converges static frames to a ~32-tap supersample. Physics claims are
-  measured with it disabled (?metro).
-- Grazing-incidence noise filter: variance-shrink around face-on means —
-  mean-preserving by construction (round-10 rewrite), cuts aliasing
-  variance. Second-order Jensen effects through the density clamp ~1%
-  (auditor-quantified).
-- Film grain, bloom, anamorphic streak, ACES grade: artistic layer, off in
-  metro, CA confined to the streak.
-- Film grain ±0.03 linear is visible in dark regions at display gamma —
-  intentional aesthetic, never present in measurements.
+Full artistic layer, all OFF in ?metro measurements: 32-phase temporal
+accumulation (presentation AA), film grain, bloom pyramid, anamorphic
+streak (the only chromatic aberration), **vignette (up to −36% corners,
+unconditional — disclosed here per round-11), exposure ×1.05, saturation
+grade (forced 1.0 in science), ACES tone map**. The gauge samples a sector
+where the vignette is provably 1.0 (round-11 diagnostician).
+- Grazing noise filter: variance-shrink around face-on means; mean-preserving
+  by construction, residual Cov(dens, fil) cross-term a few percent (round-11
+  auditor-quantified).
 
 ## 4. Numerical characteristics (measured)
 
-- Integrator: RK4 on the Binet equation, adaptive dφ = dt·0.09·clamp(0.35/u, 0.6, 1).
-- Convergence: boundary error −1.85e-7 → −1.07e-8 → −6.44e-10 as dt halves
-  (ratio 17.2 ≈ 2⁴ — clean fourth order).
-- Conservation: Binet invariant drift ≤ 1e-7 over full integrations.
-- Shadow boundary at production settings: −0.000% (offline mirror),
-  +0.2% (GPU end-to-end, scene space).
-- Known numerical edge: the in-band exhaustion tiebreak captures
-  b ∈ (b_crit, b_crit + 9e-4) — shadow inflation 3.5e-4 relative, accepted
-  and documented.
+- RK4 on Binet, adaptive dφ = dt·0.09·clamp(0.35/u, 0.6, 1).
+- Convergence: boundary error −1.85e-7 → −6.44e-10 (order gated 3.5–4.5).
+- Invariant drift ≤ 1.01e-7 (12 significant digits).
+- Shadow boundary: −0.0000% (fp64 mirror, two camera radii); +0.15% (GPU fp32
+  end-to-end, scene space).
+- **Known, bounded systematics** (all documented, all invisible without an
+  external reference, none affect the shadow criterion):
+  - escape-sphere tail ~0.9° on escaped rays' sky directions (r = 65);
+  - shipped-schedule weak-field deflection error ~0.011 rad absolute
+    (suite-measured); the dφ schedule is open-loop, not an error-feedback
+    controller — near the separatrix, perturbations amplify e-fold per
+    radian, so accuracy is certified at the production geometry by the GPU
+    gauge rather than uniformly;
+  - in-band exhaustion tiebreak inflates the shadow by db/b ~ 3.5e-4;
+  - horizon capture quantizes r to one step (~0.02 rs) — cosmetic on a black
+    silhouette;
+  - escape-crossing interpolation is O(dφ²) (~0.006°) — subdominant to the tail.
+- Suite pins are parsed from shipped source: changing uDiskIn, uFlow, or
+  ESC_R2 in the app now fails the suite loudly (round-11 closed the
+  self-referential-pin hole).
 
 ## 5. Largest remaining scientific weakness (current)
 
-**Kerr/spin is absent** — the largest gap between this renderer and the
-general case. Second: the disk is thin-plane procedural turbulence rather
-than radiative transfer. Both are documented above; the next high-impact
-improvement, if attempted, is a Kerr Hamiltonian tracer behind the same
-gauge/suite discipline (zero-spin limit must reduce to the current
-Schwarzschild results — the suite already pins those).
+**Kerr/spin absence** remains #1. #2: the fixed open-loop step schedule —
+an error-feedback controller (per-step local-error estimate adapting dφ)
+would uniformize accuracy across camera geometries; current certification is
+at the production camera plus the suite's convergence study. #3: thin-plane
+procedural disk vs radiative transfer.
 
 ## 6. Verification protocol
 
-- `node tools/science-suite.mjs` — offline closed-form battery (must be ALL GREEN).
-- `node tools/measure-shadow-converged.mjs` — GPU shadow gauge in ?metro
-  (asserts bloom off, ultra tier, HDR targets; aborts otherwise).
-- Cold adversarial sea: rotating independent reviewer agents (defect
-  hunters, spectacle jurors, GR auditor, emission auditor, hostile
-  diagnostician) — findings fixed in batch, re-run until clean.
-- Every physics change re-runs the full stack; the suite pins the shader's
-  constants so silent drift fails loudly.
+- `node tools/science-suite.mjs` — offline closed-form battery (ALL GREEN required).
+- `node tools/measure-shadow-converged.mjs` — GPU gauge in ?metro with
+  precondition asserts (bloom/ultra/HDR).
+- Cold adversarial sea: 20 rotating independent agents per round (defect
+  hunters, spectacle jurors, GR auditor, emission auditor, numerical
+  analyst, hostile falsifier, metrology verifier) — findings fixed in batch,
+  re-run until clean. Round 11's hostile panel falsified the audit itself
+  twice (palette leak, ISCO edge); both falsifications are fixed above.

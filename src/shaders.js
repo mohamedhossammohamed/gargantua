@@ -183,7 +183,14 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   float graze = smoothstep(0.02, 0.32, abs(rayDir.y));
 
   /* plunging region FIRST — it lives inside the disk's inner envelope and
-     must not be killed by the envelope early-return (round-2 audit) */
+     must not be killed by the envelope early-return (round-2 audit).
+     Radiometry tracked separately from the body: the tail multiplies the
+     BODY by uGain*boost exactly once — pre-scaling the plunge here too
+     reintroduced a g^8 double-count where the bands overlap (round-11, HIGH).
+     Kinematics: free-fall from infinity, v = sqrt(rs/r) local static — the
+     exact zero-angular-momentum infall; true ISCO-parity geodesics
+     (E = sqrt(8/9)) run slower at these radii. Documented approximation. */
+  vec3 plunge = vec3(0.0);
   if(uScience > 0.5){
     float band = smoothstep(1.15, 1.7, rr)*(1.0-smoothstep(rin*0.72, rin*0.98, rr));
     if(band > 0.01){
@@ -193,16 +200,27 @@ vec4 diskSample(vec3 q, vec3 rayDir){
       float rDrift = rr + uTime*0.30*inversesqrt(max(rr-1.0, 0.25));
       float ns = mix(0.5, vnoise(vec3(cos(phi2)*1.9, sin(phi2)*1.9, rDrift*2.2)), graze);
       float densP = band*band*pow(clamp(ns*1.75-0.42, 0.0, 1.0), 1.1);
-      vec3 pc = kelvinRGB(uTNorm*1e7*0.55)*0.40;
-      emis += pc*densP*uGain*boost;
+      float betaP = min(sqrt(RS/max(rr, 1e-3)), 0.80);
+      float gamP = inversesqrt(max(1.0-betaP*betaP, 0.01));
+      float muPp = dot(vd, -rayDir);
+      float fP = max(1.0-RS/rr, 0.04);
+      float muPl = muPp*sqrt(fP/max(1.0 - muPp*muPp*(1.0-fP), 1e-3));
+      float shiftP = clamp((1.0/(gamP*(1.0-betaP*muPl)))*sqrt(fP)*gravObs, gFloor, 1.95);
+      vec3 pc = kelvinRGB(uTNorm*1e7*0.55*shiftP)*0.40;
+      plunge += pc*densP*uGain*pow(shiftP, uBeamExp);
       alpha = clamp(densP*0.55*uOpacity, 0.0, 1.0);
     }
   }
 
-  float inner = smoothstep(rin*0.84, rin*1.12, rr);
+  /* science: the inner edge IS the ISCO — the old soft 0.84-1.12 ramp put
+     emission inside 3 rs and a half-brightness edge at ~3.3 rs, so "ISCO
+     inner edge" was false as rendered (round-11 hostile). Cinema keeps the
+     soft artistic ramp. */
+  float inner = uScience > 0.5 ? smoothstep(rin*0.97, rin*1.03, rr)
+                               : smoothstep(rin*0.84, rin*1.12, rr);
   float outer = 1.0-smoothstep(DISK_OUT*0.52, DISK_OUT*0.98, rr);
   float env = inner*outer;
-  if(env < 0.003) return vec4(emis, alpha);
+  if(env < 0.003) return vec4(plunge, alpha);
 
   float phi = atan(q.z, q.x);
   float omega = uFlow*inversesqrt(rr*rr*rr);
@@ -257,7 +275,7 @@ vec4 diskSample(vec3 q, vec3 rayDir){
     emis += vec3(1.9,2.0,2.3)*(rim*rim*0.85)*inner;
   }
 
-  emis *= uGain*boost*mix(uTint, vec3(1.0), uScience);
+  emis = emis*uGain*boost*mix(uTint, vec3(1.0), uScience) + plunge;
   alpha = clamp(alpha + dens*1.75*uOpacity, 0.0, 1.0);
   return vec4(emis, alpha);
 }
@@ -377,7 +395,9 @@ vec3 trace(vec2 ndc){
         float um = mix(u, uN, f);
         float ym = (1.0/um)*(cos(mix(phi,phiN,f))*e1.y + sin(mix(phi,phiN,f))*e2.y);
         if(y0*ym < 0.0){ t1 = f; y1 = ym; } else { t0 = f; y0 = ym; }
-        f = t0 + y0*(t1-t0)/(y0-y1);
+        float dy = y0 - y1;
+        if(abs(dy) > 1e-12) f = t0 + y0*(t1-t0)/dy;   /* fp32 flush guard: 0/0
+           would NaN f and silently swallow the crossing (round-11 numerical) */
       }
       f = clamp(f, 0.0, 1.0);
       float uH = mix(u, uN, f);
@@ -412,7 +432,11 @@ vec3 trace(vec2 ndc){
        b in (b_crit, b_crit+9e-4) whose tiebreak paints it captured,
        inflating the shadow by db/b ~ 3.5e-4: accepted, documented. */
     float uPh = 1.0/(3.0*M);
-    bool cap = (b*b < 6.75) || (u > uPh - 0.012 && w > 0.0);
+    /* outbound photons ALWAYS escape: rdot^2 = 1 - b^2 u^2 (1-rs u) has no
+       root for b < b_crit, so an outward sub-critical ray is unreachable
+       dynamically but reachable numerically — blackening it grew the shadow
+       (round-11 GR audit). Capture requires INBOUND motion. */
+    bool cap = (w > 0.0) && ((b*b < 27.0*M*M) || (u > uPh - 0.012));
     if(!cap){
       vec3 er = cos(phi)*e1 + sin(phi)*e2;
       vec3 ep = -sin(phi)*e1 + cos(phi)*e2;

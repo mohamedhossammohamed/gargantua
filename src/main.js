@@ -560,7 +560,9 @@ function updateSceneUniforms(){
   u.uSteps.value = q.steps;
   u.uDtScale.value = q.dt;
   u.uLensing.value = state.lensing ? 1 : 0;
-  u.uDoppler.value = state.doppler ? palCur.doppler : 0;
+  /* science: the PHYSICAL g-factor, always — the film palette's doppler 0.32
+     silently replaced it and gutted the beaming (round-11 hostile, HIGH) */
+  u.uDoppler.value = state.scienceMode ? 1.0 : (state.doppler ? palCur.doppler : 0);
   u.uBeamExp.value = state.scienceMode ? 4 : 3;
   u.uScience.value = state.scienceMode ? 1 : 0;
   u.uDiskIn.value = state.scienceMode ? 3.0 : 2.6;
@@ -673,7 +675,8 @@ function render(now){
   uc.uBloomStr.value = palCur.bloomStr;
   uc.uStreakStr.value = palCur.streakStr;
   uc.uExposure.value = 1.05;
-  uc.uSaturation.value = palCur.sat;
+  uc.uSaturation.value = state.scienceMode ? 1.0 : palCur.sat;   /* science chroma
+     stays on the Planck locus — ember's 1.14 pushed it off (round-11 hostile, HIGH) */
   uc.uHasGlow.value = state.bloom ? 1 : 0;
   uc.uGrainAmt.value = (URL_NOGRAIN || URL_METRO || reducedMotion) ? 0.0 : 0.030;
   uc.uPinch.value = URL_METRO ? 0.0 : 0.045;   /* metro measures scene geometry natively */
