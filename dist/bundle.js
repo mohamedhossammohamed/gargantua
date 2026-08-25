@@ -4264,9 +4264,10 @@ vec4 diskSample(vec3 q, vec3 rayDir, float muDisk, float muPl){
      brightening the receding plunge band ~8x bolometric (round-4 emission
      audit); cinema keeps the guard to avoid dead-black bands */
   float gFloor = uScience > 0.5 ? 0.05 : 0.32;
-  /* science ceiling 3.0: the physical shift in the plunge band reaches ~2.9 \u2014
-     the old 1.95 ceiling clipped g^4 beaming from ~65 to ~14.5 there
-     (round-13 emission). Cinema keeps the tone guard. */
+  /* ceiling = non-binding headroom: the physical maximum under the implemented
+     kinematics is g = sqrt(f)/(gamma*(1-beta)) = 1+beta <= 1.93 (x gravObs ~1.04
+     at shipped cameras) \u2014 the round-13 claim that shifts reach ~2.9 was wrong
+     (round-16 hostile). 3.0 keeps headroom without binding. */
   float gCeil = uScience > 0.5 ? 3.0 : 1.95;
   float shift = clamp(mix(1.0, dopp*grav, uDoppler), gFloor, gCeil);
   /* I_obs = g^uBeamExp * I_em (4 = bolometric science, 3 = cinematic tone) */
@@ -4460,10 +4461,14 @@ vec3 trace(vec2 ndc){
        claimed this was handled when it wasn't; now it is). */
     bool coplanar = abs(e1.y) + abs(e2.y) < 1e-9;
 
-    /* adaptive phi-step: fine near the photon sphere (u~2/3) so winding
-       orbits get the budget. Cap 1.0 \u2014 larger far-field steps quantize the
-       terminal sky direction into visible rings (regression caught on S2). */
-    float dphi = uDtScale*0.09*clamp(0.35/u, 0.6, 1.0);
+    /* phi-step schedule: genuinely finer through the strong field \u2014 the old
+       0.6 floor saturated the clamp for ALL r < 1.71 rs (photon sphere
+       included), pinning a constant 0.054*dt step there while claiming
+       refinement (round-16 numerical). Floor 0.35 keeps the unclamped intent
+       at the photon sphere (0.047*dt) and refines further toward the horizon.
+       Cap 1.0 \u2014 larger far-field steps quantize the terminal sky direction
+       into visible rings (regression caught on S2). */
+    float dphi = uDtScale*0.09*clamp(0.35/u, 0.35, 1.0);
 
     /* RK4 step */
     float k1u = w,             k1w = BINET(u);
@@ -4484,6 +4489,7 @@ vec3 trace(vec2 ndc){
          raw linear interp; positional accuracy bounded by the surrogate's
          O(dphi^2) model bias (round-15 numerical) */
       float t0 = 0.0, t1 = 1.0, y0 = yPrev, y1 = yCur;
+      float fPrev = -1.0;
       float f = coplanar ? 0.5 : y0/(y0-y1);   /* coplanar: y\u22610 \u2014 sample the
           step midpoint (0/0 would NaN the secant) */
       for(int k=0;k<2;k++){
@@ -4493,6 +4499,12 @@ vec3 trace(vec2 ndc){
         float dy = y0 - y1;
         if(abs(dy) > 1e-12) f = t0 + y0*(t1-t0)/dy;   /* fp32 flush guard: 0/0
            would NaN f and silently swallow the crossing (round-11 numerical) */
+        /* regula falsi can pin one bracket endpoint and stagnate at the seed
+           on curved y \u2014 fall back to bisection when the iterate stops moving
+           (round-16 numerical: demonstrated sublinear convergence to t=0.003
+           for a root at t=0.15) */
+        if(abs(f - fPrev) < 1e-3) f = 0.5*(t0 + t1);
+        fPrev = f;
       }
       f = clamp(f, 0.0, 1.0);
       float uH = mix(u, uN, f);

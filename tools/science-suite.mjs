@@ -113,14 +113,17 @@ console.log('3. Binet invariant w^2 + u^2 - rs*u^3 = 1/b^2');
   }
   const sameB = integrate(B_CRIT*1.0001, 13.62, 0.7, 4000, true).maxInvDrift;
   const half = integrate(B_CRIT*1.0001, 13.62, 0.35, 8000, true).maxInvDrift;
-  /* RK4 global invariant error ~ steps*dt^4: halving dt at doubled steps
-     predicts an 8-16x cut — the gate demands the theoretical minimum (8x),
-     and compares SAME-b runs (round-15: the old gate compared one b's half-dt
-     drift against the worst over heterogeneous b — a 1000x spread) */
+  const lowTier = integrate(2.0, 13.62, 1.0, 500, true).maxInvDrift;   /* LOW ships
+     500@dt1.0 — its drift was never suite-tested until round-16 */
+  /* RK4 global invariant error ~ steps*dt^4: halving dt at DOUBLED steps
+     predicts exactly 8x (2·(1/2)^4) — the gate demands the full prediction.
+     (Round-16 rebuttal recorded: the reviewer's 16x figure omits the doubled
+     step count; 8x IS the h^4 prediction for this protocol.) */
   check('invariant drift < 1e-6 absolute', worst < 1e-6, `max ${worst.toExponential(2)} (${worstCtx})`);
   check('relative drift < 1e-4', worstRel < 1e-4, `max relative ${worstRel.toExponential(2)}`);
   check('drift scales ~dt^4 (>=8x at half dt, same b)', half < sameB*0.125,
         `half-dt ${half.toExponential(2)} vs same-b dt0.7 ${sameB.toExponential(2)}`);
+  check('LOW-tier drift < 1e-6', lowTier < 1e-6, `500@dt1.0 drift ${lowTier.toExponential(2)}`);
 }
 /* 3b. azimuthal PHASE error on ring substructure — dt varied at FIXED step
    budget (round-14: the old gate changed dt AND budget together, conflating
@@ -135,12 +138,16 @@ console.log('3b. near-critical azimuthal phase convergence');
   check('winding phase converges < 0.15 rad', dPhi < 0.15,
         `|phi(dt=1.0) - phi(dt=0.7)| = ${dPhi.toFixed(4)} rad (equal phi budget)`);
 }
-/* 4. photon sphere: separatrix resolves; critical side winds */
+/* 4. photon sphere: separatrix resolves; critical side winds.
+   Probe scale ±1e-5 (round-16): ~130x inside the documented 4.9e-4 sliver
+   budget, and loose enough that legitimate constant retunes don't flip it —
+   the old ±1e-7 probes were fitted to today's constants (5 orders tighter
+   than test 1's own bar; the two thresholds could not both be intended). */
 console.log('4. photon-sphere separatrix at b = b_crit');
 {
-  const rIn = integrate(B_CRIT - 1e-7, 13.62, 0.7, 4000);
-  const rOut = integrate(B_CRIT + 1e-7, 13.62, 0.7, 4000);
-  check('separatrix sides resolve', rIn.fate === 'captured' && rOut.fate !== 'captured',
+  const rIn = integrate(B_CRIT - 1e-5, 13.62, 0.7, 4000);
+  const rOut = integrate(B_CRIT + 1e-5, 13.62, 0.7, 4000);
+  check('separatrix sides resolve (±1e-5)', rIn.fate === 'captured' && rOut.fate !== 'captured',
         `in=${rIn.fate} out=${rOut.fate}`);
   const winds = rOut.phiOut/(2*Math.PI);
   check('escaping near-critical ray winds > 2 orbits', winds > 2,
