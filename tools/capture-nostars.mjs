@@ -1,4 +1,6 @@
 import puppeteer from 'puppeteer-core';
+import { ensureServer } from './server-guard.mjs';
+await ensureServer();
 
 /* Bead-disambiguation pair: the identical closeup framing with and without
    the starfield. If the ring beads vanish without stars they are lensed star

@@ -1,4 +1,6 @@
 import puppeteer from 'puppeteer-core';
+import { ensureServer } from './server-guard.mjs';
+await ensureServer();
 
 /* H6 gauge v7 — first-light from the black interior.
    Bloom OFF guarantees a truly black moat; walk OUTWARD from screen center
@@ -30,6 +32,11 @@ async function measure(presses, label, lensOff){
   if(await page.evaluate(() => window.__gargantua?.bloom) !== false){
     console.error('GAUGE: bloom failed to disable — aborting (a flooded moat fabricates interior glow)');
     process.exit(4);
+  }
+  const pre = await page.evaluate(() => ({ tier: window.__gargantua?.tier, hdr: window.__gargantua?.hdr }));
+  if(pre.tier !== 'ultra' || !pre.hdr){
+    console.error('GAUGE: metro preconditions unmet:', JSON.stringify(pre));
+    process.exit(5);
   }
   if(lensOff) await page.keyboard.press('l');
   for(let i = 0; i < presses; i++){ await page.keyboard.press('q'); await new Promise(r => setTimeout(r, 100)); }

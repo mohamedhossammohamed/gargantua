@@ -1,5 +1,7 @@
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
+import { ensureServer } from './server-guard.mjs';
+await ensureServer();
 
 /* Science-mode capture: cinema vs science, mass presets, ISCO moat. */
 const exe = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';

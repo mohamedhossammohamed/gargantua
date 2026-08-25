@@ -156,11 +156,16 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   float beta = clamp(sqrt(0.5/max(rr-RS, 0.55)), 0.0, 0.80);
   vec3 vd = vec3(-q.z, 0.0, q.x)/max(rr, 1e-4);
   float gam = inversesqrt(max(1.0-beta*beta, 0.01));
-  /* dot(vd,-rayDir) IS the local-static-frame tangential cosine already:
-     the plot tangent is (K^r, L/r) with norm E/sqrt(f), giving
-     mu = b*sqrt(f)/r = sin(alpha) in the static frame — no lapse correction
-     (the round-5 cosLoc term was spurious AND backwards; round-7 audit) */
-  float mu = dot(vd, -rayDir);
+  /* the plot tangent's dot product is NOT the static-frame cosine: the
+     orthonormal static frame weighs the radial leg by sqrt(f=1-rs/r), so the
+     true tangential cosine is b*sqrt(f)/r while the plot dot gives
+     b/sqrt(r^2+b^2*rs/r) — a ~+5%/-2% g error at the inner disk, ~+21%/-8%
+     after g^4 beaming (round-10 emission audit; round-7's revert of the
+     correction was itself wrong — re-derived from the tetrad, and the general
+     form sqrt(f)/sqrt(w^2 r^2 + f) collapses exactly to b*sqrt(f)/r). */
+  float muP = dot(vd, -rayDir);
+  float fEm = max(1.0-RS/rr, 0.04);
+  float mu = muP*sqrt(fEm/max(1.0 - muP*muP*(1.0-fEm), 1e-3));
   float dopp = 1.0/(gam*(1.0-beta*mu));
   float grav = sqrt(max(1.0-RS/rr, 0.04))*gravObs;
   /* science mode keeps the physical deep redshift — the 0.32 tone floor was
@@ -216,9 +221,12 @@ vec4 diskSample(vec3 q, vec3 rayDir){
   dens *= env;
   if(dens < 0.004) return vec4(emis, alpha);
 
-  /* the fil fade is a graded anti-sparkle term, not mean-preserving —
-     science mode runs it near-photometric (round-4 emission audit) */
-  float fil = smoothstep(0.52, 0.88, n2)*mix(uScience > 0.5 ? 0.8 : 0.35, 1.0, graze);
+  /* variance-shrink around the face-on mean (~0.10): the old value-fade let
+     E[smoothstep] collapse ~5-10% low at grazing incidence (the flattened n2
+     straddles the 0.52 threshold), systematically dimming the canonical
+     edge-on view. Shrinking fil toward its mean keeps mean emission exact at
+     every angle while the speckle variance dies (round-10 emission audit). */
+  float fil = 0.10 + (smoothstep(0.52, 0.88, n2) - 0.10)*graze;
 
   float temp;
   vec3 bodyCol;
@@ -394,17 +402,17 @@ vec3 trace(vec2 ndc){
   }
 
   if(!done && T > 0.01){
-    /* budget exhausted in the winding zone — classify by photon-sphere side.
-       Exact for this tracer's phase space: every ray seeds at u_cam << u_Ph,
-       and (i) b < b_crit rays are monotonic inbound (w^2 = 1/b^2 - u^2 + rs
-       u^3 > 0 everywhere — the potential barrier sits below their energy), so
-       a ray AT u > u_Ph arrived with w > 0 and captures; (ii) b > b_crit rays
-       turn at u_out < u_Ph and never reach u > u_Ph. The state (u > u_Ph,
-       w < 0) is therefore unreachable — no outgoing super-barrier sector
-       exists to misclassify (round-5 GR audit rejoinder). The +/-0.012 band
-       with the w > 0 tiebreak covers winding rays dying near the crest. */
+    /* budget exhausted — classify by turning-point existence, not position.
+       b < b_crit: w^2 = 1/b^2 - u^2 + rs u^3 has NO root (barrier below
+       energy) — the ray is monotonic inbound and captures from ANY u, so a
+       starved budget dying far from the crest can no longer leak sky into
+       the shadow (round-10 GR audit: the old u > u_Ph test was only sound
+       when deaths happen near the crest). b > b_crit: the ray turns at
+       u_out < u_Ph and escapes — except the measure-tiny in-band sliver
+       b in (b_crit, b_crit+9e-4) whose tiebreak paints it captured,
+       inflating the shadow by db/b ~ 3.5e-4: accepted, documented. */
     float uPh = 1.0/(3.0*M);
-    bool cap = (u > uPh + 0.012) || (u > uPh - 0.012 && w > 0.0);
+    bool cap = (b*b < 6.75) || (u > uPh - 0.012 && w > 0.0);
     if(!cap){
       vec3 er = cos(phi)*e1 + sin(phi)*e2;
       vec3 ep = -sin(phi)*e1 + cos(phi)*e2;

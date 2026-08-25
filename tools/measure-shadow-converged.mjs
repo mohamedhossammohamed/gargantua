@@ -1,4 +1,6 @@
 import puppeteer from 'puppeteer-core';
+import { ensureServer } from './server-guard.mjs';
+await ensureServer();
 
 /* H6 gauge v8 (converged) — identical metrology to measure-shadow.mjs v7,
    but waits for the temporal accumulator to converge and the camera to
@@ -29,6 +31,13 @@ async function measure(presses, label, lensOff){
   if(await page.evaluate(() => window.__gargantua?.bloom) !== false){
     console.error('GAUGE: bloom failed to disable — aborting (a flooded moat fabricates interior glow)');
     process.exit(4);
+  }
+  const pre = await page.evaluate(() => ({ tier: window.__gargantua?.tier, hdr: window.__gargantua?.hdr }));
+  if(pre.tier !== 'ultra' || !pre.hdr){
+    /* a downres tier softens the raw edge via composite upsampling; the LDR
+       fallback clips the plateau — either silently biases the measurement */
+    console.error('GAUGE: metro preconditions unmet:', JSON.stringify(pre));
+    process.exit(5);
   }
   if(lensOff) await page.keyboard.press('l');
   for(let i = 0; i < presses; i++){ await page.keyboard.press('q'); await new Promise(r => setTimeout(r, 100)); }

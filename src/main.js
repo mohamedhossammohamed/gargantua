@@ -293,6 +293,8 @@ const kioskHrs = parseFloat(new URLSearchParams(location.search).get('kiosk') ||
 if(kioskHrs > 0) setTimeout(() => location.reload(), kioskHrs*3600e3);
 const URL_NOGRAIN = new URLSearchParams(location.search).has('nograin');   /* metrology flag */
 const URL_NOSTARS = new URLSearchParams(location.search).has('nostars');   /* lensed-star vs renderer bead disambiguation */
+const URL_CLEAN = new URLSearchParams(location.search).has('clean');       /* poster mode: HUD hidden */
+if(URL_CLEAN) hudEl.classList.add('hidden');
 const URL_METRO = new URLSearchParams(location.search).has('metro');       /* raw-tracer metrology: no jitter, no accumulation, no grain,
    no pincushion — the shadow criterion measures the capture boundary physics,
    not the AA filter or the presentation warp */
@@ -542,7 +544,8 @@ function updateSceneUniforms(){
   u.uTime.value = simTime;
   u.uCamPos.value.copy(camera.position);
   window.__gargantua = { camDist: Math.hypot(camera.position.x, camera.position.y, camera.position.z),
-                         steps: q.steps, tier: state.qKey, bloom: state.bloom };
+                         steps: q.steps, tier: state.qKey, bloom: state.bloom,
+                         hdr: HDR_TYPE !== THREE.UnsignedByteType };
   /* basis columns: right, up, forward */
   camera.getWorldDirection(_fwd);
   _right.crossVectors(_fwd, _worldUp).normalize();
@@ -695,7 +698,9 @@ function render(now){
     const dKm = dRs*rsKm;
     tCam.textContent = dRs.toFixed(1)+' rs = '+(dKm >= 0.05*AU_KM ? (dKm/AU_KM).toFixed(2)+' AU' : eng(dKm)+'km');
   }
-  if(state.quality === 'auto'){
+  if(state.quality === 'auto' && !URL_METRO){
+    /* metro pins the grid: a downres tier would soften the raw edge through
+       the composite's LinearFilter upsample (round-10 gauge audit) */
     adaptClock += dt;
     if(adaptClock >= 0.8 && frameCount > 40){
       adaptClock = 0;

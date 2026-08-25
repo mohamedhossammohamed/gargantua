@@ -1,5 +1,7 @@
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
+import { ensureServer } from './server-guard.mjs';
+await ensureServer();
 
 /* Screenshot-matrix battery: drives the live renderer through views,
    palettes, toggles and quality tiers; saves PNGs to data/shots/. */
@@ -18,13 +20,16 @@ const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 page.on('console', m => { if(m.type() === 'error') errors.push(m.text()); });
 
-async function shot(name, keys = [], wheel = 0, settle = 900){
-  await page.goto('http://127.0.0.1:8811/index.html', { waitUntil: 'load' });
+async function shot(name, keys = [], wheel = 0, settle = 3000, query = ''){
+  /* settle 3000ms: at ULTRA framerates the 32-phase EMA needs ~2-3s to visit
+     enough jitter phases — 900ms left periodic dashes on thin rings
+     (round-10 image audit, 02-graze) */
+  await page.goto(`http://127.0.0.1:8811/index.html${query}`, { waitUntil: 'load' });
   await new Promise(r => setTimeout(r, 700));
   await page.mouse.wheel({ deltaY: 10 });          /* skip intro */
   for(const k of keys){ await page.keyboard.press(k); await new Promise(r => setTimeout(r, 120)); }
   if(wheel) for(let i = 0; i < wheel; i++){ await page.mouse.wheel({ deltaY: -120 }); await new Promise(r => setTimeout(r, 40)); }
-  await new Promise(r => setTimeout(r, settle));   /* camera damping settles */
+  await new Promise(r => setTimeout(r, settle));   /* camera damping + accumulator convergence */
   await page.screenshot({ path: `${outDir}/${name}.jpg`, type: 'jpeg', quality: 92 });
   console.log('shot:', name);
 }
@@ -37,13 +42,19 @@ await shot('05-graze-film',       ['2', 'p']);
 await shot('06-nolensing-orbit',  ['l']);
 await shot('07-nodoppler-orbit',  ['d']);
 await shot('08-nobloom-orbit',    ['b']);
-await shot('09-ultra-graze',      ['2'], 0, 1400);   /* ULTRA is the boot default */
+await shot('09-ultra-graze',      ['2'], 0, 3500);   /* ULTRA is the boot default */
 await shot('10-low-orbit',        ['q', 'q']);        /* ultra -> auto -> low */
 await shot('11-closeup-paused',   ['3'], 14);
 await page.keyboard.press(' ');
-await new Promise(r => setTimeout(r, 300));
+await new Promise(r => setTimeout(r, 2500));       /* EMA convergence before the frozen frame */
 await page.screenshot({ path: `${outDir}/12-closeup-frozen.jpg`, type: 'jpeg', quality: 92 });
 console.log('shot: 12-closeup-frozen');
+
+/* poster set: identical frames with the HUD hidden (?clean) — the jury's
+   recurring "screams screenshot" note; the chrome stays on the review set */
+await shot('P1-orbit-clean',  [],  0, 3200, '?clean=1');
+await shot('P2-graze-clean',  ['2'], 0, 3200, '?clean=1');
+await shot('P3-low-clean',    ['q', 'q'], 0, 3200, '?clean=1');
 
 console.log('PAGE ERRORS:', errors.length);
 errors.slice(0, 5).forEach(e => console.log('  ', e.slice(0, 160)));
