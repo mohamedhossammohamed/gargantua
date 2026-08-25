@@ -73,9 +73,11 @@ function boundaryB(dCam, dtScale, steps){
 }
 
 /* 1. shadow boundary vs closed form — two camera radii AND the shipped
-   quality tiers (round-12: certifying only non-shipped configs is theater).
-   Gate note: 0.05% is a RENDERING-GRADE regression bar, deliberately ~100x
-   the documented 4.9e-4 tiebreak sliver; it is not a metrology claim. */
+   quality tiers. GATE HONESTY (round-14): 0.05% = 5e-4 relative is only
+   1.03x the documented 4.9e-4 tiebreak sliver — this gate is a REGRESSION
+   bar (catches unintended changes), NOT a metrology claim: the fallback
+   tiebreak bias is inside it by design. The metrology claim lives in the
+   GPU gauge (+0.15% measured) and in the sliver's own documented bound. */
 console.log('1. shadow boundary vs b_crit = 3*sqrt(3)*M =', B_CRIT.toFixed(6));
 {
   for(const [d, dt, st, cfg] of [[13.62, 1.0, 1500, 'd13.6 dt1.0'],
@@ -102,27 +104,34 @@ console.log('2. RK4 convergence — order gated to [3.5, 4.5]');
 /* 3. Binet invariant conservation — with a dt-scaling confirmation */
 console.log('3. Binet invariant w^2 + u^2 - rs*u^3 = 1/b^2');
 {
-  let worst = 0, worstCtx = '';
+  let worst = 0, worstCtx = '', worstRel = 0;
   for(const [b, st] of [[1.0, 1500], [2.0, 1500], [B_CRIT*1.0001, 4000], [5.0, 1500], [12.0, 1500]]){
     const r = integrate(b, 13.62, 0.7, st, true);
+    const rel = r.maxInvDrift/(1.0/(b*b));            /* scale-aware: relative drift */
     if(r.maxInvDrift > worst){ worst = r.maxInvDrift; worstCtx = `b=${b.toFixed(3)} in ${st} steps`; }
+    if(rel > worstRel) worstRel = rel;
   }
   const half = integrate(B_CRIT*1.0001, 13.62, 0.35, 8000, true).maxInvDrift;
   /* RK4 global invariant error ~ steps*dt^4: halving dt at doubled steps
-     should cut drift ~8-16x — the scaling is TESTED, not asserted */
-  check('invariant drift < 1e-6', worst < 1e-6, `max ${worst.toExponential(2)} (${worstCtx})`);
-  check('drift scales ~dt^4 (dt 0.7->0.35)', half < worst*0.25,
-        `half-dt drift ${half.toExponential(2)} vs ${worst.toExponential(2)} (threshold pins ~6 digits on inv0~0.15, not 12)`);
+     predicts an 8-16x cut — the gate demands the theoretical minimum (8x),
+     not half of it (round-14: the old >4x bar accepted order-2 schemes) */
+  check('invariant drift < 1e-6 absolute', worst < 1e-6, `max ${worst.toExponential(2)} (${worstCtx})`);
+  check('relative drift < 1e-4', worstRel < 1e-4, `max relative ${worstRel.toExponential(2)}`);
+  check('drift scales ~dt^4 (>=8x at half dt)', half < worst*0.125,
+        `half-dt drift ${half.toExponential(2)} vs ${worst.toExponential(2)}`);
 }
-/* 3b. azimuthal PHASE error on ring substructure (round-12: the suite gated
-   only the scalar boundary; near-critical winding phase was untested) */
+/* 3b. azimuthal PHASE error on ring substructure — dt varied at FIXED step
+   budget (round-14: the old gate changed dt AND budget together, conflating
+   truncation with winding budget) */
 console.log('3b. near-critical azimuthal phase convergence');
 {
   const fine = integrate(B_CRIT + 1e-5, 13.62, 0.7, 6000).phiOut;
-  const coarse = integrate(B_CRIT + 1e-5, 13.62, 1.0, 4000).phiOut;
+  const coarse = integrate(B_CRIT + 1e-5, 13.62, 1.0, 6000*0.7/1.0).phiOut;  /* same total phi budget */
   const dPhi = Math.abs(coarse - fine);
+  /* fitted envelope, stated as such: sub-0.15 rad on a ~10 rad sweep keeps
+     ring substructure stable at rendering grade; NOT a metrology tolerance */
   check('winding phase converges < 0.15 rad', dPhi < 0.15,
-        `|phi(dt=1.0) - phi(dt=0.7,2x steps)| = ${dPhi.toFixed(4)} rad`);
+        `|phi(dt=1.0) - phi(dt=0.7)| = ${dPhi.toFixed(4)} rad (equal phi budget)`);
 }
 /* 4. photon sphere: separatrix resolves; critical side winds */
 console.log('4. photon-sphere separatrix at b = b_crit');
@@ -177,11 +186,17 @@ console.log('5. weak-field light bending (adaptive dt as shipped)');
   check('shipped-schedule weak-field error < 0.015 rad', schedAbs < 0.015,
         `|coarse - refined| = ${schedAbs.toFixed(4)} rad (${(100*(alpha-alphaRef)/alphaRef).toFixed(1)}% rel) — documented systematic`);
 }
-/* 6. escape-sphere tail: EMPIRICAL — same ray integrated from two radii */
-console.log('6. escape-sphere residual (empirical)');
+/* 6. escape-sphere tail: analytic bound + source pin.
+   NOTE (round-14): an empirical two-radius difference (alpha(65) - alpha(300))
+   was attempted and REJECTED — the flat-chord accounting couples the start
+   geometry into each sweep, so the difference measures chord artifacts, not
+   the tail. A clean estimator needs a shared-periapsis formulation; until
+   then the bound below is the radial-photon first-order reference, and the
+   GPU gauge bounds the end-to-end systematic. */
+console.log('6. escape-sphere residual (analytic bound + source pin)');
 {
   const tail = 2*M/Math.sqrt(ESC_R2);
-  check('analytic tail bound < 0.02 rad', tail < 0.02, `2M/r_esc = ${tail.toFixed(4)} rad`);
+  check('analytic tail bound < 0.02 rad', tail < 0.02, `2M/r_esc = ${tail.toFixed(4)} rad (radial-photon first order)`);
   check('ESC_R2 matches shaders.js', Math.abs(ESC_R2 - 4225) < 1e-9, `parsed ESC_R2 = ${ESC_R2}`);
 }
 /* 7. pinned constants — parsed from the app's actual source */
@@ -239,7 +254,7 @@ console.log('8. grazing-filter mean-emission anchor');
     acc += sstep(fbm4(Math.cos(ph)*2.9+9.4, Math.sin(ph)*2.9, Math.log(r)*8.8));
   }
   const anchor = acc/N;
-  const anchorSrc = parseFloat((shaderSrc.match(/float fil = ([0-9.]+) \+/) || [])[1]);
+  const anchorSrc = parseFloat((shaderSrc.match(/float fil = mix\(([0-9.]+),/) || [])[1]);
   check('fil anchor matches measured E[smoothstep]', Math.abs(anchorSrc - anchor) < 0.005,
         `measured E = ${anchor.toFixed(4)}, shader anchor = ${anchorSrc} (n=${N})`);
 }

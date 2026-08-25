@@ -567,7 +567,9 @@ function updateSceneUniforms(){
   u.uScience.value = state.scienceMode ? 1 : 0;
   u.uDiskIn.value = state.scienceMode ? 3.0 : 2.6;
   u.uTNorm.value = massPhysics(MASSES[state.massIdx].msun).tMaxK/1e7;
-  u.uGain.value = palCur.gain;
+  /* science: unity gain — the palette's 1.18/0.96 swing leaked a 23%
+     amplitude modulation into the claimed-physical path (round-14 hostile) */
+  u.uGain.value = state.scienceMode ? 1.0 : palCur.gain;
   u.uOpacity.value = 0.85;
   u.uFlow.value = 0.70711;   /* exact Keplerian Omega_K = sqrt(M/r^3), M = 1/2
     (round-2 fix was silently overwritten here each frame until round-3 caught it) */

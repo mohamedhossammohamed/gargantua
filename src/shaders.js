@@ -202,7 +202,7 @@ vec4 diskSample(vec3 q, vec3 rayDir, float muDisk, float muPl){
       float betaP = min(sqrt(RS/max(rr, 1e-3)), 0.93);
       float gamP = inversesqrt(max(1.0-betaP*betaP, 0.01));
       float fP = max(1.0-RS/rr, 0.04);
-      float shiftP = clamp((1.0/(gamP*(1.0-betaP*muPl)))*sqrt(fP)*gravObs, gFloor, 1.95);
+      float shiftP = clamp((1.0/(gamP*(1.0-betaP*muPl)))*sqrt(fP)*gravObs, gFloor, gCeil);
       vec3 pc = kelvinRGB(uTNorm*1e7*0.55*shiftP)*0.40;
       plunge += pc*densP*uGain*pow(shiftP, uBeamExp);
       alpha = clamp(densP*0.55*uOpacity, 0.0, 1.0);
@@ -227,7 +227,8 @@ vec4 diskSample(vec3 q, vec3 rayDir, float muDisk, float muPl){
   float t1 = uTime*0.05;
 
   float n1 = fbm5(vec3(ca_*1.35, sa_*1.35, lr*4.6)+vec3(0.0,0.0,t1));
-  float n2 = mix(0.5, fbm4(vec3(ca_*2.9+9.4, sa_*2.9, lr*8.8)+vec3(0.0,0.0,-t1*1.9)), mix(0.6, 1.0, graze));
+  float n2raw = fbm4(vec3(ca_*2.9+9.4, sa_*2.9, lr*8.8)+vec3(0.0,0.0,-t1*1.9));
+  float n2 = mix(0.5, n2raw, mix(0.6, 1.0, graze));
   float n3 = mix(0.5, vnoise(vec3(ca_*7.5, sa_*7.5, lr*17.0)+vec3(t1*3.1)), graze);
 
   float dens = n1*0.58+n2*0.30+n3*0.16;
@@ -236,12 +237,12 @@ vec4 diskSample(vec3 q, vec3 rayDir, float muDisk, float muPl){
   dens *= env;
   if(dens < 0.004) return vec4(emis, alpha);
 
-  /* variance-shrink around the face-on mean: E[smoothstep(0.52,0.88,fbm4)]
-     = 0.0804, measured from a fp64 port of the shipped noise fields
-     (science-suite test 8, n=2e5) — the old hand-asserted 0.10 biased edge-on
-     filament emission ~20%. Shrinking fil toward its measured mean keeps mean
-     emission angle-independent while the speckle variance dies. */
-  float fil = 0.080 + (smoothstep(0.52, 0.88, n2) - 0.080)*graze;
+  /* blend the RESULT, not the field: S(mix(f)) != mix(S(f)) for nonlinear S —
+     evaluating the smoothstep on the angle-blended field starved mid-
+     inclinations of the filament mean (round-14). mix(0.080, S(raw), graze)
+     keeps the mean exactly 0.080-blended at every angle. The 0.080 anchor is
+     the measured E[smoothstep(0.52,0.88,fbm4)] (suite test 8, n=2e5). */
+  float fil = mix(0.080, smoothstep(0.52, 0.88, n2raw), graze);
 
   float temp;
   vec3 bodyCol;

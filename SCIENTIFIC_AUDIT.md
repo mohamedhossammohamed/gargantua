@@ -55,12 +55,17 @@ carries its error.
 
 ## 3. Rendering approximations (visual, not physics)
 
-Full artistic layer, all OFF in ?metro measurements: 32-phase temporal
-accumulation (presentation AA), film grain, bloom pyramid, anamorphic
-streak (the only chromatic aberration), **vignette (up to −36% corners,
-unconditional — disclosed here per round-11), exposure ×1.05, saturation
-grade (forced 1.0 in science), ACES tone map**. The gauge samples a sector
-where the vignette is provably 1.0 (round-11 diagnostician).
+Full artistic layer: 32-phase temporal accumulation (presentation AA), film
+grain, bloom pyramid, anamorphic streak (the only chromatic aberration),
+**vignette (up to −36% corners, unconditional — disclosed per round-11),
+exposure ×1.05, saturation grade (forced 1.0 in science), ACES tone map**.
+Metro purity, stated precisely (round-14 correction): ?metro disables
+jitter, accumulation, grain, and the pincushion; exposure/ACES/vignette
+REMAIN APPLIED but are provably threshold-invariant for the metro gauge's
+measurand — a hard-step edge under any monotone pointwise map crosses the
+50%-of-plateau level at the same geometric location (round-11 diagnostician,
+numerically replicated). The gauge samples a sector where the vignette is
+provably 1.0.
 - Grazing noise filter: variance-shrink around face-on means; mean-preserving
   by construction, residual Cov(dens, fil) cross-term a few percent (round-11
   auditor-quantified).
@@ -80,13 +85,21 @@ where the vignette is provably 1.0 (round-11 diagnostician).
     controller — near the separatrix, perturbations amplify e-fold per
     radian, so accuracy is certified at the production geometry by the GPU
     gauge rather than uniformly;
-  - in-band exhaustion tiebreak inflates the shadow by db/b ~ 3.5e-4;
+  - in-band exhaustion tiebreak inflates the shadow by db/b ~ 4.9e-4;
   - horizon capture quantizes r to one step (~0.02 rs) — cosmetic on a black
     silhouette;
   - escape-crossing interpolation is O(dφ²) (~0.006°) — subdominant to the tail.
 - Suite pins are parsed from shipped source: changing uDiskIn, uFlow, or
   ESC_R2 in the app now fails the suite loudly (round-11 closed the
   self-referential-pin hole).
+- **fp32 per-ray chaos (round-14, disclosed)**: at shipped step sizes the
+  GPU's fp32 roundoff (~1e-7/step) is the same order as RK4 truncation, and
+  the separatrix amplifies noise laid down ≥2 windings before the fate
+  decision by e^(4π) — second-and-higher photon-ring images and lensed-star
+  positions are chaotically resampled at degree level per pixel/driver. The
+  CERTIFIED quantity is the median composited shadow edge (+0.15%, 3.3×
+  margin to the criterion); per-pixel high-order-image fidelity is not
+  certified and cannot be in fp32.
 
 ## 5. Largest remaining scientific weakness (current)
 
