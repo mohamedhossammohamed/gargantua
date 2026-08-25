@@ -67,9 +67,11 @@ measurand — a hard-step edge under any monotone pointwise map crosses the
 50%-of-plateau level at the same geometric location (round-11 diagnostician,
 numerically replicated). The gauge samples a sector where the vignette is
 provably 1.0.
-- Grazing noise filter: variance-shrink around face-on means; mean-preserving
-  by construction, residual Cov(dens, fil) cross-term a few percent (round-11
-  auditor-quantified).
+- Grazing noise filter: variance-shrink with the anchor CALIBRATED by Monte
+  Carlo of the downstream chain (round-19): the anchor is the covariance-
+  corrected 0.115 (raw field mean 0.091 + the Cov(dens,fil) term the fade
+  destroys), gated by suite test 8 to <1.5% — measured residual 0.01%.
+  Second-order Jensen effects through the density clamp are inside that gate.
 
 ## 4. Numerical characteristics (measured)
 
@@ -98,9 +100,14 @@ provably 1.0.
   - horizon capture quantizes r to one step (~0.02 rs) — cosmetic on a black
     silhouette;
   - escape-crossing interpolation is O(dφ²) (~0.006°) — subdominant to the tail.
-- Suite pins are parsed from shipped source: changing uDiskIn, uFlow, or
-  ESC_R2 in the app now fails the suite loudly (round-11 closed the
-  self-referential-pin hole).
+- Suite pins are parsed from shipped source: uDiskIn, uFlow, ESC_R2, the
+  dφ floor, the step gain, the tiebreak sliver, and the jitter amplitude
+  all fail the suite loudly on edit (round-19 closed the last
+  hand-duplicated-constant hole). The shadow-boundary certification is
+  JITTER-AVERAGED (K-seed bisection): the temporal accumulator converges to
+  the seed-averaged system, so the suite certifies the boundary the GPU
+  actually shows — closing the round-19 "certifies a program the GPU does
+  not execute" gap for the boundary observable.
 - **fp32 per-ray chaos (round-14, disclosed)**: at shipped step sizes the
   GPU's fp32 roundoff (~1e-7/step) is the same order as RK4 truncation, and
   the separatrix amplifies noise laid down ≥2 windings before the fate
