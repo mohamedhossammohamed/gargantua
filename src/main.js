@@ -186,9 +186,11 @@ const events = {
   binary: { on: false, t: 0, a: 0, merged: false },
 };
 
-/* timelike Binet acceleration: u'' = M/L^2 + 3Mu^2 - u */
+/* timelike Binet acceleration: u'' = M/L^2 + 3Mu^2 - u
+   (round-20 Wave-1 audit: the u^3 typo suppressed the GR correction by an
+   extra factor u — precession ~10x too small. events.md had it right.) */
 function timelikeAccel(u, L){
-  return GEO_M/(L*L) + 3*GEO_M*u*u*u - u;
+  return GEO_M/(L*L) + 3*GEO_M*u*u - u;
 }
 function timelikeStep(p, dt){
   /* p = {u, phi, w, L}; RK4 on (u,w), phi advances dt */
@@ -215,19 +217,20 @@ function spawnTDE(){
   setMassIdx(1);                                          /* SGR A* 4.3e6 */
   const ev = events.tde;
   ev.on = true; ev.t = 0; ev.debris = [];
-  /* near-parabolic: E = 0.98 (slightly bound — debris returns over time);
-     periapsis target rp = 6.7 rs. Newton-solve L from the periapsis condition
-     w(rp)=0: E^2 = (1-2M/rp)(1 + L^2/rp^2) */
-  const E = 0.98, rp = 6.7;
-  const L = Math.sqrt(rp*rp*((E*E)/(1 - 2*GEO_M/rp) - 1));
+  /* near-PARABOLIC: E = 1 - dE/2 — the debris spread (±dE) straddles the
+     binding threshold, so genuinely half the debris is unbound (round-20
+     Wave-1: the old E=0.98 kept every particle bound and faked the escape
+     with a distance kill). Periapsis rp = 6.7 rs (penetrating encounter). */
+  const rp = 6.7;
+  const L = Math.sqrt(rp*rp*((1)/(1 - 2*GEO_M/rp) - 1));   /* E=1 parabolic */
+  const E = 1;
   /* start the star far out on the inbound leg */
-  ev.star = { u: 1/38, phi: -2.6, w: Math.sqrt(Math.max(
+  ev.star = { u: 1/38, phi: -2.6, w: -Math.sqrt(Math.max(
       (E*E - (1 - 2*GEO_M*38)*(1 + L*L/1444))/ (L*L), 1e-8)), L, E };
-  /* debris constants (Stone et al.): dE = M-star over R-star;
-     time-compressed x20 for visibility (documented: return-time
-     distribution compressed) */
-  ev.dE = (GEO_M/4.3e6) / 0.0548 * 20;                    /* M*_geo over R*_geo, x20 */
+  /* debris energy spread: Stone-type dE = GM_BH x R_star over r_t^2
+     (round-20 Wave-1: the old GM-star-over-R-star form was 163x too small) */
   ev.rT = 0.0548*Math.cbrt(4.3e6);                        /* ~8.9 rs */
+  ev.dE = GEO_M*0.0548/(ev.rT*ev.rT);                     /* ~3.45e-4 */
   ev.disrupted = false;
   cam.tDist = 26;                                         /* frame the show */
 }
@@ -243,16 +246,22 @@ function tickTDE(dt){
     const rStar = 1/ev.star.u;
     if(rStar < ev.rT){
       ev.disrupted = true;
-      /* debris: energy spread around the star's E, L spread keeps the stream
-         coherent; half bound / half unbound by dE sign */
+      /* debris: energies spread ±dE around the star's — with E_star = 1-dE/2
+         the spread STRADDLES the binding threshold: genuinely half unbound
+         (round-20 Wave-1: the old code kept every particle bound and faked
+         the escape with a distance kill). Velocities from the FIRST INTEGRAL
+         at each particle's own (E, L) — the energy spread enters the dynamics
+         directly (the old ad-hoc w-kick delivered 0.07 percent of the
+         intended shift and the E field was dead data). */
       for(let i = 0; i < 600; i++){
         const f = i/600 - 0.5;                            /* [-0.5, 0.5] */
         const Ei = ev.star.E + f*2*ev.dE;
-        /* L spread: small, keeps the stream ribbon-like */
-        const Li = ev.star.L*(1 + f*0.06);
-        /* seed debris at the disruption point, spread along the tangent */
-        ev.debris.push({ u: ev.star.u, phi: ev.star.phi + f*0.35,
-          w: ev.star.w + f*ev.dE*40, L: Li, E: Ei, temp: 0.4 + Math.abs(f)*1.2 });
+        const Li = ev.star.L*(1 + f*0.06);                /* small physical L spread */
+        const u0 = ev.star.u;
+        const fL = 1 - 2*GEO_M*u0;
+        const w2v = (Ei*Ei - fL*(1 + Li*Li*u0*u0))/(Li*Li);
+        ev.debris.push({ u: u0, phi: ev.star.phi + f*0.35,
+          w: -Math.sqrt(Math.max(w2v, 0)), L: Li, E: Ei, temp: 0.4 + Math.abs(f)*1.2 });
       }
     }
   } else {

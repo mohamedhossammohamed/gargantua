@@ -10,12 +10,17 @@ Exact physics:
 - Timelike geodesics in Schwarzschild, Binet form: u'' + u = M/L² + 3Mu²
   (per-ray debris integration on CPU; perihelion precession is EXACT and
   visible — Δφ_periapsis = 6πM/(a(1−e²)) is a suite test).
-- Tidal radius: r_t = R★(M_BH/M★)^{1/3}. Disruption when the star's
-  center-of-mass orbit crosses r_t (for M=10 M☉, M★=1 M☉, R★=R☉:
-  r_t ≈ 24 rs — outside the horizon, a visible disruption ✓).
-- Debris energy spread (Stone et al.): Δε = GM★/R★ (most-bound/unbound).
-  Half the debris is unbound (escapes, fades), half is bound (returns,
-  winds into a stream, accretes through ISCO and vanishes).
+- Tidal radius: r_t = R★(M_BH/M★)^{1/3} ≈ 8.9 rs for (Sgr A*, sun) —
+  the disruption happens INSIDE the frame, just outside the ISCO.
+- Debris energy spread (Stone-type, scaled to the hole):
+  Δε = GM_BH·R★/r_t² ≈ 3.45×10⁻⁴ (c² units) for (4.3×10⁶ M☉, sun).
+  The star spawns at E = 1 − Δε/2 so the ±Δε spread STRADDLES the binding
+  threshold: genuinely half the debris is unbound. Debris velocities are
+  derived from the first integral at each particle's own (E, L) — no
+  ad-hoc kicks.
+- Time compression: NONE of the dynamics is compressed; with the correct
+  Δε the stream wraps on physically-scaled orbital times. A small L spread
+  (±6%, from the star's self-rotation) widens the ribbon.
 
 Approximations (documented):
 - Debris = N=600 test particles (no self-gravity, no hydro pressure after
@@ -53,6 +58,12 @@ Approximations (documented):
 
 - Inspiral: Peters (1964) quadrupole formula, geometric units:
   da/dt = −(64/5)·m₁m₂(m₁+m₂)/a³ (circular). CPU-integrated.
+  TIME COMPRESSION ×500 (documented): the true decay at the shipped masses
+  takes hours of wall time; the compressed evolution follows the exact a⁴
+  self-similar law, so only the clock is rescaled.
+- Merger remnant: M_f = (m₁+m₂)(1−ε), ε ≈ 0.05 (numerical-relativity value
+  for equal-mass non-spinning binaries). Area-theorem check (suite 9c):
+  M_f,irr ≥ √(m₁²+m₂²) — the IRREDUCIBLE mass bound, not the total mass.
 - Merger: at a ≈ 6(m₁+m₂) (ISCO-ish) the bodies plunge. Final mass from
   the area theorem + measured GW efficiency: M_f = (m₁+m₂)·(1−ε), ε ≈ 0.05
   for equal masses (documented as the numerical-relativity value for

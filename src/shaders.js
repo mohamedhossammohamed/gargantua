@@ -429,8 +429,11 @@ vec3 trace(vec2 ndc){
         float delJ = 1.0/(gamJ*(1.0 - 0.99*cosT));         /* SR Doppler delta */
         float dsJ = dphi*sqrt(wN*wN/(uN*uN*uN*uN) + 1.0/(uN*uN))/8.0;
         float tKJ = 12000.0*delJ;                          /* Doppler-shifted color */
-        col += T*kelvinRGB(clamp(tKJ, 1500.0, 40000.0))*pow(clamp(tKJ/15000.0, 0.0, 3.0), 2.0)
-               *densJ*delJ*delJ*delJ*dsJ*uGain*0.5;
+        col += T*kelvinRGB(clamp(tKJ, 1500.0, 40000.0))
+               *densJ*delJ*dsJ*uGain*0.10;                 /* gain 0.10: delta^3 ~ 2800
+           down-axis saturates the core through ACES and the streak pass then
+           paints it as horizontal bars (round-20 Wave-1 HIGH) — keep the core
+           inside the tonemap's shoulder so the beam reads as a beam */
         T *= 1.0 - densJ*dsJ*0.02;                         /* optically thin */
       }
     }
