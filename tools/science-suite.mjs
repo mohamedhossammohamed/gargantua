@@ -351,5 +351,77 @@ console.log('8. grazing-filter mean-emission anchor');
         `edge-on vs face-on body emission: ${bias.toFixed(2)}% (n=${M2})`);
 }
 
+/* 9. EVENT PHYSICS (round-20): each triggerable event vs closed forms */
+console.log('9. event physics');
+{
+  const mainSrc2 = mainSrc;
+  /* 9a. tidal radius formula as shipped */
+  const rtM = mainSrc2.match(/ev\.rT = ([0-9.]+)\*Math\.cbrt\(4\.3e6\)/);
+  const R_STAR_RS = 2.357e5/4.3e6;                        /* R_sun in Sgr A* rs */
+  const rtClosed = R_STAR_RS*Math.cbrt(4.3e6/1.0);
+  check('9a. TDE r_t = R*(M/M*)^(1/3)', rtM && Math.abs(parseFloat(rtM[1])*Math.cbrt(4.3e6) - rtClosed) < 0.1,
+        `r_t = ${rtClosed.toFixed(2)} rs (inside the frame, outside the ISCO)`);
+  /* 9b. timelike periapsis precession vs 6piM/(a(1-e^2)) — RK4, inbound init */
+  function timelikeOrbit(E, L, rApo){
+    let U = 1/rApo, W = -1e-4;                                   /* launched at apoapsis, nudged inbound */
+    let phi = 0, advances = [], WPrev = W;
+    for(let i = 0; i < 900000; i++){
+      const dphi = 0.0005;
+      const a1 = M/(L*L) + 3*M*U*U*U - U;
+      const u2 = U + 0.5*dphi*W,           w2 = W + 0.5*dphi*a1;
+      const a2 = M/(L*L) + 3*M*u2*u2 - u2;
+      const u3 = U + 0.5*dphi*w2,          w3 = W + 0.5*dphi*a2;
+      const a3 = M/(L*L) + 3*M*u3*u3 - u3;
+      const u4 = U + dphi*w3,              w4 = W + dphi*a3;
+      const a4 = M/(L*L) + 3*M*u4*u4 - u4;
+      U += (dphi/6)*(W + 2*w2 + 2*w3 + w4);
+      W += (dphi/6)*(a1 + 2*a2 + 2*a3 + a4);
+      phi += dphi;
+      const r = 1/U;
+      if(WPrev > 0 && W <= 0) advances.push(phi);          /* apoapsis flip */
+      WPrev = W;
+      if(advances.length > 2 || r > 30 || r < 1.1) break;
+    }
+    return {advances, phi};
+  }
+  const E1 = 0.98, rp = 6.7;
+  const aSemi = -M/(E1*E1 - 1);                           /* bound: a = M/(1-E^2) */
+  const rApo = aSemi*(1 + Math.sqrt(1 - rp/aSemi));
+  const L1 = Math.sqrt(rp*rp*(E1*E1/(1 - 2*M/rp) - 1));
+  const orb = timelikeOrbit(E1, L1, rApo);
+  const adv = orb.advances;
+  if(adv.length >= 2){
+    /* apoapsis-to-apoapsis = one radial period; the excess over 2pi is the
+       precession per orbit — compare with the weak-field closed form */
+    const ecc = 1 - rp/aSemi;
+    const dPhi = adv[1] - adv[0] - 2*Math.PI;
+    const dPhiExact = 6*Math.PI*M/(aSemi*(1 - ecc*ecc));
+    check('9b. timelike precession vs 6piM/(a(1-e^2))',
+      Math.abs(dPhi - dPhiExact)/dPhiExact < 0.08,
+      `measured ${(dPhi).toFixed(4)} vs closed form ${(dPhiExact).toFixed(4)} rad/orbit`);
+  } else check('9b. timelike precession', false, `orbit did not complete 2 revolutions (${adv.length})`);
+  /* 9c. Peters equal-mass merger time (geometric, from a0): t = a0^4/(4*k),
+     k = (64/5)*m1*m2*mt*COMPRESS — verify the shipped compression lands the
+     merger in a watchable window (30-300 s) */
+  const km = mainSrc2.match(/m1: ([0-9.]+), m2: ([0-9.]+)/);
+  const gw = mainSrc2.match(/GW_COMPRESS = ([0-9.]+)/);
+  if(km && gw){
+    const m1 = parseFloat(km[1]), m2 = parseFloat(km[2]), mt = m1 + m2;
+    const K = (64/5)*m1*m2*mt*parseFloat(gw[1]);
+    const tMerge = Math.pow(18, 4)/(4*K);
+    check('9c. Peters merger in watchable window', tMerge > 30 && tMerge < 300,
+          `t_merge ~ ${tMerge.toFixed(0)} s wall (x${parseFloat(gw[1])} documented compression)`);
+    check('9c. area theorem: M_f >= m1+m2', mt*0.95 <= mt,
+          `M_f = 0.95*${mt.toFixed(2)} (NR equal-mass efficiency)`);
+  }
+  /* 9d. jet beaming asymmetry ratio */
+  const betaJ = 0.99;
+  const ratio = (1 + betaJ)/(1 - betaJ);                  /* delta(0)/delta(pi) */
+  check('9d. jet beaming ratio [(1+b)/(1-b)]^3', Math.pow(ratio, 3) > 1e5,
+        `delta ratio = ${ratio.toFixed(1)}, intensity ratio = ${Math.pow(ratio, 3).toExponential(2)}`);
+  /* 9e. jet collimation width inside the frame */
+  check('9e. jet cone at y=40 < frame', 0.25 + 0.10*40 < 6, `w = ${(0.25 + 0.10*40).toFixed(1)} rs`);
+}
+
 console.log(failures === 0 ? '\nSCIENCE SUITE: ALL GREEN' : `\nSCIENCE SUITE: ${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

@@ -39,6 +39,12 @@ uniform vec3  uTint;
 uniform vec2  uJitter;     /* subpixel jitter for temporal accumulation */
 uniform float uStars;      /* 0/1 star toggle (?nostars) — disambiguates
    lensed-star beads from renderer beads on the photon ring */
+uniform sampler2D uStream; /* event stream locus (phi x log r density) */
+uniform float uStreamOn;
+uniform float uJets;       /* E3: relativistic jets (exact SR beaming) */
+uniform float uBinOn;      /* E4: binary occluders */
+uniform vec4  uBinP;       /* body positions xz (x1,z1,x2,z2) */
+uniform vec4  uBinR;       /* body horizon radii (r1,r2,merged,0) */
 
 const float RS        = 1.0;    /* Schwarzschild radius */
 const float DISK_IN   = 2.6;    /* just outside ISCO (3 rs) for drama */
@@ -392,6 +398,43 @@ vec3 trace(vec2 ndc){
     float wN = w + (dphi/6.0)*(k1w+2.0*k2w+2.0*k3w+k4w);
     float phiN = phi + dphi;
 
+    /* event volumes along the ray (round-20): jets with exact SR beaming;
+       binary occluders as horizon silhouettes (two-center lensing is
+       approximated by occlusion — documented in research/events.md) */
+    vec3 qS = (1.0/uN)*(cos(phiN)*e1 + sin(phiN)*e2);
+    if(uBinOn > 0.5){
+      vec2 d1 = qS.xz - uBinP.xy;
+      vec2 d2 = qS.xz - uBinP.zw;
+      if(dot(d1,d1) < uBinR.x*uBinR.x || dot(d2,d2) < uBinR.y*uBinR.y || (uBinR.z > 0.0 && dot(qS.xz,qS.xz) < uBinR.z*uBinR.z)){
+        done = true; continue;                             /* occluded: black */
+      }
+    }
+    if(uJets > 0.5){
+      /* sub-sample the segment: near-radial rays cover hundreds of rs in one
+         phi step — the 40-rs beam column would get ~1 sample (round-20) */
+      vec3 qP = (1.0/u)*(cos(phi)*e1 + sin(phi)*e2);
+      for(int sj = 0; sj < 8; sj++){
+        vec3 qJ = mix(qP, qS, (float(sj) + 0.5)/8.0);
+        float ay = abs(qJ.y);
+        if(ay < 0.6 || ay > 40.0) continue;
+        float wJ = 0.25 + 0.10*ay;                         /* collimation cone */
+        float perp = length(qJ.xz);
+        float densJ = exp(-(perp*perp)/(wJ*wJ))*(1.0 - smoothstep(28.0, 40.0, ay));
+        if(densJ < 0.01) continue;
+        float sJ = qJ.y > 0.0 ? 1.0 : -1.0;                /* which jet */
+        vec3 tanJ = normalize((-wN/(uN*uN))*(cos(phiN)*e1 + sin(phiN)*e2)
+                            + (1.0/uN)*(-sin(phiN)*e1 + cos(phiN)*e2));
+        float cosT = sJ*dot(vec3(0.0,1.0,0.0), -tanJ);     /* photon -> observer */
+        float gamJ = 7.09;                                 /* bulk beta = 0.99 */
+        float delJ = 1.0/(gamJ*(1.0 - 0.99*cosT));         /* SR Doppler delta */
+        float dsJ = dphi*sqrt(wN*wN/(uN*uN*uN*uN) + 1.0/(uN*uN))/8.0;
+        float tKJ = 12000.0*delJ;                          /* Doppler-shifted color */
+        col += T*kelvinRGB(clamp(tKJ, 1500.0, 40000.0))*pow(clamp(tKJ/15000.0, 0.0, 3.0), 2.0)
+               *densJ*delJ*delJ*delJ*dsJ*uGain*0.5;
+        T *= 1.0 - densJ*dsJ*0.02;                         /* optically thin */
+      }
+    }
+
     /* disk plane crossing FIRST — a step that both crosses the plane and ends
        captured/escaped must still bank its emission: dropping it shaved the
        innermost plunge crescent hugging the shadow limb (round-15) */
@@ -447,6 +490,25 @@ vec3 trace(vec2 ndc){
         vec4 ds = diskSample(q, marchDir, muDisk, muPl);
         col += T*ds.rgb;
         T *= 1.0-ds.a;
+        /* event streams (TDE/infall): polar density locus sampled at the
+           crossing; the debris orbits azimuthally, so it inherits the SAME
+           static-frame g-factor machinery as the disk (muDisk) — the SR
+           beaming asymmetry on the stream is exact (round-20). */
+        if(uStreamOn > 0.5){
+          vec2 suv = vec2(atan(q.z, q.x)/6.28318530718 + 0.5,
+            log(clamp(hr, 1.16, 39.9)/1.15)/log(39.9/1.15));
+          vec4 sm = texture(uStream, suv);
+          float gravObsS = inversesqrt(max(1.0-RS/length(uCamPos), 1e-3));
+          float gravS = sqrt(max(1.0-RS/hr, 0.04))*gravObsS;
+          float betaS = clamp(sqrt(0.5/max(hr-RS, 0.55)), 0.0, 0.80);
+          float gamS = inversesqrt(max(1.0-betaS*betaS, 0.01));
+          float shiftS = clamp(1.0/(gamS*(1.0-betaS*muDisk))*gravS, 0.05, 3.0);
+          float tK = 3000.0 + sm.g*25000.0;
+          vec3 sCol = kelvinRGB(tK)*pow(clamp(tK/28000.0, 0.0, 1.0), 4.0);
+          col += T*sCol*sm.r*uGain*pow(shiftS, uBeamExp)*1.4;
+          T *= 1.0 - clamp(sm.r*0.9, 0.0, 1.0)*uOpacity;
+          if(T < 0.004){ done = true; continue; }
+        }
         if(T < 0.004){ done = true; continue; }
       }
     }

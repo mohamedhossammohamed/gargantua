@@ -84,6 +84,15 @@ function makeTarget(w, h){
 function freeTarget(t){ if(t) t.dispose(); }
 
 /* ---------- materials ---------- */
+/* event stream locus: polar density texture rasterized CPU-side each frame
+   (phi x log r), sampled by the shader at disk-plane crossings */
+const streamTex = new THREE.DataTexture(
+  new Float32Array(STREAM_TEX_W*STREAM_TEX_H*4), STREAM_TEX_W, STREAM_TEX_H,
+  THREE.RGBAFormat, THREE.FloatType);
+streamTex.minFilter = THREE.LinearFilter;
+streamTex.magFilter = THREE.LinearFilter;
+streamTex.needsUpdate = true;
+
 const mScene = makeMaterial(FS_SCENE, {
   uTime:{value:0}, uCamPos:{value:new THREE.Vector3()}, uBasis:{value:new THREE.Matrix3()},
   uTanF:{value:1}, uAspect:{value:1}, uSteps:{value:800}, uDtScale:{value:1.0},
@@ -93,6 +102,12 @@ const mScene = makeMaterial(FS_SCENE, {
   uFlow:{value:0.70711}, uTwinkle:{value:0.6}, uTint:{value:new THREE.Vector3(1.06,0.97,0.88)},  /* exact Omega_K = sqrt(M/r^3), M=1/2 */
   uJitter:{value:new THREE.Vector2(0,0)},
   uStars:{value:1},
+  uStream:{value:streamTex},
+  uStreamOn:{value:0},
+  uJets:{value:0},
+  uBinOn:{value:0},
+  uBinP:{value:new THREE.Vector4()},
+  uBinR:{value:new THREE.Vector4()},
 });
 const mBlend = makeMaterial(FS_BLEND, {
   uCur:{value:null}, uPrev:{value:null}, uMix:{value:1.0},
@@ -150,6 +165,214 @@ function massPhysics(msun){
      eta = 1-sqrt(8/9) (Schwarzschild), r_in = 6GM/c^2  ->  8.6e6 K at 10 Msun.
      (Round-2 audit: the earlier 6.3e7 constant was ~7x super-Eddington.) */
   return { rsKm, tMaxK: 8.6e6*Math.pow(10/msun, 0.25) };
+}
+
+/* ============================================================
+   EVENTS (round-20): triggerable physics, rendered through the
+   same Schwarzschild tracer. Design + approximations:
+   research/events.md. All particle dynamics are TIMELIKE
+   geodesics integrated RK4 in the timelike Binet form
+       u'' = M/L^2 + 3Mu^2 - u
+   (perihelion precession is therefore exact, not faked).
+   ============================================================ */
+const GEO_M = 0.5;                       /* geometric M in rs=1 units */
+const STREAM_TEX_W = 512, STREAM_TEX_H = 64;
+const STREAM_RMIN = 1.15, STREAM_RMAX = 40;
+let plotStream = null;                                     /* set per-frame by tickTDE */
+
+const events = {
+  tde: { on: false, t: 0, star: null, debris: [], spawnedMassIdx: -1 },
+  infall: { on: false, particles: [] },
+  binary: { on: false, t: 0, a: 0, merged: false },
+};
+
+/* timelike Binet acceleration: u'' = M/L^2 + 3Mu^2 - u */
+function timelikeAccel(u, L){
+  return GEO_M/(L*L) + 3*GEO_M*u*u*u - u;
+}
+function timelikeStep(p, dt){
+  /* p = {u, phi, w, L}; RK4 on (u,w), phi advances dt */
+  const a1 = timelikeAccel(p.u, p.L);
+  const u2 = p.u + 0.5*dt*p.w,           w2 = p.w + 0.5*dt*a1;
+  const a2 = timelikeAccel(u2, p.L);
+  const u3 = p.u + 0.5*dt*w2,            w3 = p.w + 0.5*dt*a2;
+  const a3 = timelikeAccel(u3, p.L);
+  const u4 = p.u + dt*w3,                w4 = p.w + dt*a3;
+  const a4 = timelikeAccel(u4, p.L);
+  return {
+    u:   p.u + (dt/6)*(p.w + 2*w2 + 2*w3 + w4),
+    w:   p.w + (dt/6)*(a1 + 2*a2 + 2*a3 + a4),
+    phi: p.phi + dt,
+    L:   p.L,
+  };
+}
+
+/* spawn a TDE: Sgr A*-mass hole (auto-switched), sun-like star on a
+   near-parabolic orbit with periapsis 0.75*r_t — a penetrating encounter.
+   r_t = R*(M/M*)^(1/3) ~ 8.9 rs for (4.3e6, 1 Msun): disruption INSIDE the
+   frame, just outside the ISCO. */
+function spawnTDE(){
+  setMassIdx(1);                                          /* SGR A* 4.3e6 */
+  const ev = events.tde;
+  ev.on = true; ev.t = 0; ev.debris = [];
+  /* near-parabolic: E = 0.98 (slightly bound — debris returns over time);
+     periapsis target rp = 6.7 rs. Newton-solve L from the periapsis condition
+     w(rp)=0: E^2 = (1-2M/rp)(1 + L^2/rp^2) */
+  const E = 0.98, rp = 6.7;
+  const L = Math.sqrt(rp*rp*((E*E)/(1 - 2*GEO_M/rp) - 1));
+  /* start the star far out on the inbound leg */
+  ev.star = { u: 1/38, phi: -2.6, w: Math.sqrt(Math.max(
+      (E*E - (1 - 2*GEO_M*38)*(1 + L*L/1444))/ (L*L), 1e-8)), L, E };
+  /* debris constants (Stone et al.): dE = M-star over R-star;
+     time-compressed x20 for visibility (documented: return-time
+     distribution compressed) */
+  ev.dE = (GEO_M/4.3e6) / 0.0548 * 20;                    /* M*_geo over R*_geo, x20 */
+  ev.rT = 0.0548*Math.cbrt(4.3e6);                        /* ~8.9 rs */
+  ev.disrupted = false;
+  cam.tDist = 26;                                         /* frame the show */
+}
+
+function tickTDE(dt){
+  const ev = events.tde;
+  if(!ev.on) return;
+  ev.t += dt;
+  const step = Math.min(dt, 0.05)*1.0;
+  /* star: integrate + disrupt at r_t */
+  if(!ev.disrupted){
+    ev.star = timelikeStep(ev.star, step*2.0);
+    const rStar = 1/ev.star.u;
+    if(rStar < ev.rT){
+      ev.disrupted = true;
+      /* debris: energy spread around the star's E, L spread keeps the stream
+         coherent; half bound / half unbound by dE sign */
+      for(let i = 0; i < 600; i++){
+        const f = i/600 - 0.5;                            /* [-0.5, 0.5] */
+        const Ei = ev.star.E + f*2*ev.dE;
+        /* L spread: small, keeps the stream ribbon-like */
+        const Li = ev.star.L*(1 + f*0.06);
+        /* seed debris at the disruption point, spread along the tangent */
+        ev.debris.push({ u: ev.star.u, phi: ev.star.phi + f*0.35,
+          w: ev.star.w + f*ev.dE*40, L: Li, E: Ei, temp: 0.4 + Math.abs(f)*1.2 });
+      }
+    }
+  } else {
+    /* debris: integrate, kill inside horizon / far escape */
+    for(const p of ev.debris){
+      if(p.dead) continue;
+      const np = timelikeStep(p, step*2.0);
+      p.u = np.u; p.w = np.w; p.phi = np.phi;
+      const r = 1/p.u;
+      if(r < 1.05 || r > STREAM_RMAX*1.3) p.dead = true;
+      /* compression heating proxy: temperature rises near periapsis */
+      p.temp = Math.min(2.0, p.temp + step*Math.abs(p.w)*0.02);
+    }
+  }
+  /* rasterize the locus into the polar density texture */
+  const data = streamTex.image.data;
+  data.fill(0);
+  plotStream = (r, phi, dens, temp) => {
+    if(r < STREAM_RMIN || r > STREAM_RMAX) return;
+    const x = Math.floor(((phi % (2*Math.PI) + 2*Math.PI) % (2*Math.PI))/(2*Math.PI)*STREAM_TEX_W) % STREAM_TEX_W;
+    const y = Math.floor(Math.log(r/STREAM_RMIN)/Math.log(STREAM_RMAX/STREAM_RMIN)*(STREAM_TEX_H-1));
+    const o = (y*STREAM_TEX_W + x)*4;
+    data[o]   = Math.min(1, data[o]   + dens);
+    data[o+1] = Math.min(1, data[o+1] + temp*dens);
+    data[o+3] = 255;
+  };
+  if(!ev.disrupted){
+    const rS = 1/ev.star.u;
+    for(let k = -2; k <= 2; k++) plotStream(rS + k*0.02, ev.star.phi, 1.0, 0.35);  /* the star: bright spot */
+  } else {
+    for(const p of ev.debris){
+      if(p.dead) continue;
+      plotStream(1/p.u, p.phi, 0.5, p.temp);
+    }
+  }
+  tickInfallRaster();
+  streamTex.needsUpdate = true;
+}
+
+/* E2: gas infall — particles launched at r~20rs with sub-circular L; each
+   loses angular momentum parametrically (dL/dt = -k*L, a viscosity proxy —
+   NOT MHD, documented); otherwise exact timelike geodesics. */
+const infall = { on: false, particles: [] };
+function spawnInfall(){
+  infall.on = true;
+  if(infall.particles.length) return;
+  for(let i = 0; i < 400; i++){
+    const r = 16 + Math.random()*10, phi = Math.random()*2*Math.PI;
+    const Lc = Math.sqrt(GEO_M*r*r/(r - 3*GEO_M));         /* circular-orbit L */
+    const L = Lc*(0.80 + 0.15*Math.random());
+    const E = Math.sqrt((1 - 2*GEO_M/r)*(1 + L*L/(r*r)));
+    infall.particles.push({ u: 1/r, phi, w: 0, L, E, temp: 0.6 + Math.random()*0.8, dead: false });
+  }
+}
+function tickInfall(dt){
+  if(!infall.on) return;
+  const step = Math.min(dt, 0.05)*2.0;
+  for(const p of infall.particles){
+    if(p.dead) continue;
+    p.L *= (1 - 0.015*step);                               /* viscosity proxy */
+    const np = timelikeStep(p, step);
+    p.u = np.u; p.w = np.w; p.phi = np.phi;
+    const r = 1/p.u;
+    if(r < 1.05 || r > STREAM_RMAX*1.5) p.dead = true;
+  }
+}
+function tickInfallRaster(){
+  if(!infall.on) return;
+  for(const p of infall.particles){
+    if(p.dead) continue;
+    plotStream(1/p.u, p.phi, 0.45, p.temp);
+  }
+}
+
+/* E3: relativistic jets — bipolar collimated outflows along +/-y (the disk
+   normal). Kinematics parametric (cone + bulk beta); the BEAMING is exact SR:
+   delta = 1/[Gamma(1 - beta*cos)], I = delta^3 I' per-frequency. Blandford-
+   Znajek launching is NOT modeled (our tracer is a=0) — documented. */
+const jets = { on: false };
+function spawnJets(){ jets.on = !jets.on; }
+
+/* E4: binary black hole merger — Peters (1964) inspiral, circular:
+   da/dt = -(64/5) m1 m2 (m1+m2) / a^3 (geometric units). Bodies render as
+   occluding horizon silhouettes (two-center lensing approximated —
+   documented). Merger: M_f = (m1+m2)(1-0.05), the NR equal-mass efficiency. */
+const binary = { on: false, t: 0, a: 0, phase: 0, merged: false,
+  m1: 0.35, m2: 0.25, x1: 0, z1: 0, x2: 0, z2: 0 };
+const GW_COMPRESS = 500;   /* Peters decay time-compressed x500: at true rates
+   the merger takes ~hours of wall time — invisible. The COMPRESSED evolution
+   still follows the exact a^4 law (documented visualization compression). */
+function spawnBinary(){
+  binary.on = true; binary.t = 0; binary.merged = false;
+  binary.a = 18; binary.phase = 0;
+}
+function tickBinary(dt){
+  if(!binary.on || binary.merged) return;
+  const mt = binary.m1 + binary.m2;
+  /* Peters: da/dt = -(64/5) m1 m2 mt / a^3 — semi-implicit to stay stable
+     as the decay accelerates */
+  binary.a += (-64/5*binary.m1*binary.m2*mt*GW_COMPRESS/(binary.a**3))*dt;
+  binary.phase += Math.sqrt(mt/(binary.a**3))*dt;
+  const f1 = binary.m2/mt, f2 = binary.m1/mt;
+  binary.x1 =  binary.a*f1*Math.cos(binary.phase);
+  binary.z1 =  binary.a*f1*Math.sin(binary.phase);
+  binary.x2 = -binary.a*f2*Math.cos(binary.phase);
+  binary.z2 = -binary.a*f2*Math.sin(binary.phase);
+  if(binary.a < 5*mt){
+    binary.merged = true;
+    binary.Mf = mt*0.95;                                   /* NR equal-mass efficiency */
+    binary.x1 = binary.z1 = binary.x2 = binary.z2 = 0;
+    binary.rOcc = 2*binary.Mf;                             /* final horizon */
+  }
+  binary.rOcc = binary.merged ? 2*binary.Mf : 0;
+  binary.r1 = 2*binary.m1; binary.r2 = 2*binary.m2;
+}
+
+function setMassIdx(idx){
+  state.massIdx = idx % MASSES.length;
+  document.getElementById('btnMass').textContent = MASSES[state.massIdx].label;
+  updateScienceHud();
 }
 
 const state = {
@@ -410,6 +633,22 @@ function cycleMass(){
   document.getElementById('btnMass').textContent = MASSES[state.massIdx].label;
   updateScienceHud();
 }
+document.getElementById('btnTDE').addEventListener('click', () => {
+  spawnTDE();
+  document.getElementById('btnTDE').classList.add('on');
+});
+document.getElementById('btnInfall').addEventListener('click', () => {
+  spawnInfall();
+  document.getElementById('btnInfall').classList.toggle('on');
+});
+document.getElementById('btnJets').addEventListener('click', () => {
+  spawnJets();
+  document.getElementById('btnJets').classList.toggle('on');
+});
+document.getElementById('btnBinary').addEventListener('click', () => {
+  spawnBinary();
+  document.getElementById('btnBinary').classList.add('on');
+});
 const tRs = document.getElementById('tRs'), tCam = document.getElementById('tCam'),
       tTmax = document.getElementById('tTmax');
 function updateScienceHud(){
@@ -602,6 +841,15 @@ function render(now){
   updateCamera(dt);
   tweenPalette(dt);
   updateSceneUniforms();
+  tickTDE(dt);
+  tickInfall(dt);
+  tickBinary(dt);
+  const uEv = mScene.uniforms;
+  uEv.uStreamOn.value = (events.tde.on || infall.on) ? 1.0 : 0.0;
+  uEv.uJets.value = jets.on ? 1.0 : 0.0;
+  uEv.uBinOn.value = binary.on ? 1.0 : 0.0;
+  uEv.uBinP.value.set(binary.x1, binary.z1, binary.x2, binary.z2);
+  uEv.uBinR.value.set(binary.r1 || 0, binary.r2 || 0, binary.rOcc || 0, 0);
   hudEl.classList.toggle('dim', cam.idleTimer > 8 && introT >= INTRO_LEN);
 
   /* --- scene pass with temporal accumulation: subpixel jitter + EMA blend

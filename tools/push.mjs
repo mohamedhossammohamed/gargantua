@@ -1,9 +1,11 @@
 import { execSync } from 'node:child_process';
-
-/* Detached push — outlives the 120s shell cap on slow uplinks. */
-
-const out = execSync('git push -u origin main 2>&1; echo EXIT:$?', {
-  cwd: '/Users/mohammedhossam/blackhole',
-  encoding: 'utf8', timeout: 540000,
-});
-console.log(out.slice(-600));
+try {
+  const out = execSync('git push origin main', {
+    cwd: '/Users/mohammedhossam/blackhole', timeout: 480000,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  console.log('PUSH OK:', out.toString().trim().split('\n').pop());
+} catch(e){
+  console.log('PUSH FAIL:', String(e.stderr || e.message).slice(0, 300));
+  process.exit(1);
+}
